@@ -216,7 +216,6 @@
     </div>
     <div class="icon-row">
       <button class="icon-btn" id="legendBtn" title="범례"><span>ℹ️</span></button>
-      <button class="icon-btn" id="adminBtn" title="관리자 모드"><span id="adminIcon">🔒</span></button>
     </div>
   </header>
 
@@ -226,7 +225,6 @@
       <input type="text" id="searchInput" placeholder="동네, 주소, 건물 이름 검색">
       <button id="searchBtn" title="검색">🔍</button>
     </div>
-    <div class="mode-badge" id="modeBadge"><span class="mode-dot"></span><span id="modeBadgeText"></span></div>
 
     <div class="fab-stack">
       <button class="fab-locate" id="locateBtn" title="내 위치로 돌아가기">📍</button>
@@ -240,48 +238,6 @@
 <div id="appToast"></div>
 
 <!-- Add bin sheet (admin only) -->
-<div class="sheet-overlay" id="addOverlay">
-  <div class="sheet">
-    <div class="sheet-handle"></div>
-    <h2 id="addTitle">쓰레기통 등록</h2>
-    <p class="sub" id="addSub">선택한 위치에 쓰레기통 정보를 바로 등록합니다.</p>
-
-    <label class="field-label">종류</label>
-    <div class="type-grid">
-      <div class="type-chip" data-type="general"><div class="dot"></div>🗑️ 일반쓰레기</div>
-      <div class="type-chip" data-type="recycle"><div class="dot"></div>♻️ 재활용</div>
-    </div>
-
-    <label class="field-label">주소 (선택)</label>
-    <input type="text" id="binAddress" placeholder="예: 대전 서구 도안동 123-4">
-
-    <label class="field-label">위치 설명 (선택)</label>
-    <input type="text" id="binNote" placeholder="예: 공원 입구 옆, 편의점 앞">
-
-    <label class="field-label">사진 (선택)</label>
-    <div id="binPreviewWrap">
-      <img id="binPreviewImg" alt="쓰레기통 사진">
-      <button type="button" id="binPhotoRemove">✕</button>
-    </div>
-    <div class="photo-drop-mini" id="binPhotoDrop">📷 쓰레기통 사진 추가</div>
-    <input type="file" id="binFileInput" accept="image/*" capture="environment">
-    <p class="field-error" id="addFieldError">종류를 선택해주세요.</p>
-
-    <div class="btn-row">
-      <button class="secondary" id="cancelAddBtn">취소</button>
-      <button class="primary inactive" id="saveBinBtn">등록하기</button>
-    </div>
-  </div>
-</div>
-
-<!-- Admin PIN sheet (dynamic content) -->
-<div class="sheet-overlay" id="adminOverlay">
-  <div class="sheet">
-    <div class="sheet-handle"></div>
-    <div id="adminBody"></div>
-  </div>
-</div>
-
 <!-- Legend sheet -->
 <div class="sheet-overlay" id="legendOverlay">
   <div class="sheet">
@@ -291,19 +247,6 @@
     <div class="legend-row"><div class="dot" style="background:var(--general)"></div>🗑️ 일반쓰레기</div>
     <div class="legend-row"><div class="dot" style="background:var(--recycle)"></div>♻️ 재활용</div>
     <div class="btn-row"><button class="secondary" id="closeLegendBtn" style="flex:1;">닫기</button></div>
-  </div>
-</div>
-
-<!-- Confirm sheet (replaces native confirm(), which is unreliable in this sandbox) -->
-<div class="sheet-overlay" id="confirmOverlay">
-  <div class="sheet">
-    <div class="sheet-handle"></div>
-    <h2>확인해주세요</h2>
-    <p class="sub" id="confirmMessage"></p>
-    <div class="btn-row">
-      <button class="secondary" id="confirmNoBtn" style="flex:1;">취소</button>
-      <button class="primary" id="confirmYesBtn" style="flex:1;background:var(--danger);">삭제</button>
-    </div>
   </div>
 </div>
 
@@ -350,13 +293,8 @@
   var DAEJEON_CENTER = [36.3504, 127.3845]; // 대전광역시 대략 중심
 
   var bins = [];
-  var ownerPinHash = null;
-  var adminMode = false;
-  var deleteMode = false;
-
-  var map, tempMarker = null, pendingLatLng = null, selectedType = null, editingBinId = null;
+  var map;
   var binLayer;
-  var binPhotoDataUrl = null;
   var userLocationMarker = null, userAccuracyCircle = null, watchId = null;
 
   function el(id){ return document.getElementById(id); }
@@ -365,34 +303,6 @@
       return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
     });
   }
-  async function sha256Hex(str){
-    var enc = new TextEncoder().encode(str);
-    var buf = await crypto.subtle.digest('SHA-256', enc);
-    return Array.from(new Uint8Array(buf)).map(function(b){ return b.toString(16).padStart(2,'0'); }).join('');
-  }
-  function fileToCompressedDataUrl(file, maxDim, quality){
-    return new Promise(function(resolve, reject){
-      var reader = new FileReader();
-      reader.onload = function(e){
-        var img = new Image();
-        img.onload = function(){
-          var w = img.width, h = img.height;
-          var scale = Math.min(1, maxDim / Math.max(w, h));
-          var cw = Math.max(1, Math.round(w * scale));
-          var ch = Math.max(1, Math.round(h * scale));
-          var canvas = document.createElement('canvas');
-          canvas.width = cw; canvas.height = ch;
-          canvas.getContext('2d').drawImage(img, 0, 0, cw, ch);
-          resolve(canvas.toDataURL('image/jpeg', quality));
-        };
-        img.onerror = reject;
-        img.src = e.target.result;
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
   var toastTimer = null;
   function showToast(msg, duration){
     var toast = el('appToast');
@@ -445,10 +355,10 @@
 
   function wait(ms){ return new Promise(function(res){ setTimeout(res, ms); }); }
 
-  async function storageSetSafe(key, value, shared){
+  async function storageSetSafe(key, value, shared, silent){
     if(!shared){
       try{ localStorage.setItem('local_'+key, value); return true; }
-      catch(e){ showToast('이 기기에 저장하지 못했어요.'); return false; }
+      catch(e){ if(!silent) showToast('이 기기에 저장하지 못했어요.'); return false; }
     }
     for(var attempt=0; attempt<2; attempt++){
       await ensureStoreLoaded();
@@ -456,7 +366,7 @@
       var ok = await jsonbinWrite(remoteStore);
       if(ok) return true;
       if(attempt === 0){ await wait(700); continue; }
-      showToast('저장에 실패했어요. 네트워크 상태를 확인하고 다시 시도해주세요.', 5000);
+      if(!silent) showToast('저장에 실패했어요. 네트워크 상태를 확인하고 다시 시도해주세요.', 5000);
       return false;
     }
     return false;
@@ -511,11 +421,6 @@
       attribution:'&copy; OpenStreetMap contributors'
     }).addTo(map);
     binLayer = L.layerGroup().addTo(map);
-
-    map.on('click', function(e){
-      if(deleteMode) return;
-      if(adminMode){ openAddSheet(e.latlng); }
-    });
 
     var lastIconSize = null;
     map.on('zoomend', function(){
@@ -657,12 +562,12 @@
     '낭월동':[36.2847073,127.4821709],
   };
 
-  function runSearch(){
+  async function runSearch(){
     var q = el('searchInput').value.trim();
     if(!q) return;
     var normalized = q.replace(/\s+/g, '');
 
-    // 1) exact match
+    // 1) exact dong-name match
     if(DONG_GAZETTEER[normalized]){
       map.flyTo(DONG_GAZETTEER[normalized], 16);
       return;
@@ -689,7 +594,30 @@
       return;
     }
 
-    showToast('찾을 수 없어요. "도안동", "둔산동"처럼 동 이름으로 검색해보세요.');
+    // 4) fall back to a real building/place-name search (works here since this is a genuine
+    //    standalone site, not the sandboxed Claude artifact preview)
+    var btn = el('searchBtn');
+    var originalLabel = btn.textContent;
+    btn.textContent = '…';
+    btn.disabled = true;
+    try{
+      var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=kr'
+        + '&viewbox=127.20,36.50,127.55,36.20&bounded=0'
+        + '&q=' + encodeURIComponent(q + ' 대전');
+      var res = await fetch(url, { headers: { 'Accept-Language': 'ko' } });
+      var results = await res.json();
+      if(results && results.length > 0){
+        var r = results[0];
+        map.flyTo([parseFloat(r.lat), parseFloat(r.lon)], 17);
+      } else {
+        showToast('찾을 수 없어요. 동 이름이나 건물 이름으로 다시 검색해보세요.');
+      }
+    }catch(e){
+      showToast('검색 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.');
+    }finally{
+      btn.textContent = originalLabel;
+      btn.disabled = false;
+    }
   }
   el('searchBtn').addEventListener('click', runSearch);
   el('searchInput').addEventListener('keydown', function(e){
@@ -1493,24 +1421,7 @@
   ];
 
   async function boot(){
-    var r = await storageGetSafe('ownerAuth', true);
-    ownerPinHash = r && r.value ? JSON.parse(r.value).pinHash : null;
-
-    var p = await storageGetSafe('isAdmin', false);
-    if(p && p.value === 'true' && ownerPinHash){ adminMode = true; }
-
     await loadBins();
-    updateModeUI();
-  }
-
-  async function addDeletedSeedKey(key){
-    var r = await storageGetSafe('deletedSeedKeys', true);
-    var list = [];
-    try{ list = r && r.value ? JSON.parse(r.value) : []; }catch(e){ list = []; }
-    if(list.indexOf(key) === -1){
-      list.push(key);
-      await storageSetSafe('deletedSeedKeys', JSON.stringify(list), true);
-    }
   }
 
   async function loadBins(){
@@ -1546,44 +1457,13 @@
       });
 
       if(added > 0){
-        await storageSetSafe('bins', JSON.stringify(bins), true);
+        await storageSetSafe('bins', JSON.stringify(bins), true, true);
       }
     }
 
     renderBinMarkers();
   }
-  async function saveBins(){
-    return await storageSetSafe('bins', JSON.stringify(bins), true);
-  }
-
-  function updateModeUI(){
-    var btn = el('adminBtn');
-    var icon = el('adminIcon');
-    var badge = el('modeBadge');
-    var badgeText = el('modeBadgeText');
-    if(deleteMode){
-      badge.style.display = 'flex';
-      badge.style.background = 'var(--danger)';
-      badge.style.color = '#fff';
-      badge.style.cursor = 'pointer';
-      badgeText.textContent = '🗑️ 삭제 모드 · 지도의 쓰레기통을 누르면 삭제돼요 (다시 누르면 끄기)';
-    } else if(adminMode){
-      badge.style.display = 'flex';
-      badge.style.background = '';
-      badge.style.color = '';
-      badge.style.cursor = 'default';
-      badgeText.textContent = '관리자 모드 · 지도를 누르면 바로 등록돼요';
-    } else {
-      badge.style.display = 'none';
-    }
-    if(adminMode){
-      btn.classList.add('active'); icon.textContent = '🔓';
-    } else {
-      btn.classList.remove('active'); icon.textContent = '🔒';
-    }
-  }
-
-  // ---- render markers ----
+  // ---- render markers (view-only) ----
   function renderBinMarkers(){
     binLayer.clearLayers();
     var size = iconSizeForZoom(map.getZoom());
@@ -1594,277 +1474,15 @@
       var photoHtml = bin.photo ? '<div class="popup-photo-label">📷 등록된 사진</div><img src="'+bin.photo+'" style="width:100%;max-width:220px;border-radius:8px;margin-bottom:8px;display:block;">' : '';
       var addressHtml = bin.address ? '<div class="popup-note">📍 '+escapeHtml(bin.address)+'</div>' : '';
       var noteHtml = bin.note ? '<div class="popup-note">'+escapeHtml(bin.note)+'</div>' : '';
-      var actionsHtml = adminMode ? '<div class="popup-actions"><button class="popup-del" style="color:var(--recycle);" onclick="window.__editBin(\''+bin.id+'\')">종류/정보 수정</button><button class="popup-del" onclick="window.__deleteBin(\''+bin.id+'\')">삭제하기</button></div>' : '';
       var popupHtml =
         '<div class="popup-title">'+meta.label+'</div>'+
         photoHtml+
         addressHtml+
-        noteHtml+
-        actionsHtml;
+        noteHtml;
       marker.bindPopup(popupHtml, {closeButton:false});
-      marker.on('click', function(){
-        if(deleteMode){
-          marker.closePopup();
-          window.__deleteBin(bin.id);
-        }
-      });
     });
   }
 
-  // ---- add bin sheet (admin only) ----
-  function openAddSheet(latlng){
-    pendingLatLng = latlng;
-    selectedType = null;
-    editingBinId = null;
-
-    el('addTitle').textContent = '쓰레기통 등록';
-    el('addSub').textContent = '선택한 위치에 쓰레기통 정보를 바로 등록합니다.';
-    el('saveBinBtn').textContent = '등록하기';
-
-    document.querySelectorAll('.type-chip').forEach(function(c){ c.classList.remove('selected'); });
-    el('binNote').value = '';
-    el('binAddress').value = '';
-    el('binFileInput').value = '';
-    binPhotoDataUrl = null;
-    el('binPreviewWrap').style.display = 'none';
-    el('binPhotoDrop').style.display = 'block';
-    el('addFieldError').style.display = 'none';
-    el('saveBinBtn').classList.add('inactive');
-
-    if(tempMarker){ map.removeLayer(tempMarker); }
-    tempMarker = L.marker(latlng, {icon:solidIcon('general'), opacity:0.85}).addTo(map);
-
-    el('addOverlay').classList.add('open');
-  }
-
-  window.__editBin = function(id){
-    var bin = bins.find(function(b){ return b.id === id; });
-    if(!bin) return;
-    map.closePopup();
-
-    pendingLatLng = null;
-    editingBinId = id;
-    selectedType = bin.type;
-
-    el('addTitle').textContent = '쓰레기통 정보 수정';
-    el('addSub').textContent = '종류나 설명, 사진을 바꿀 수 있어요. 위치는 그대로 유지돼요.';
-    el('saveBinBtn').textContent = '수정하기';
-
-    document.querySelectorAll('.type-chip').forEach(function(c){
-      c.classList.toggle('selected', c.getAttribute('data-type') === bin.type);
-    });
-    el('binNote').value = bin.note || '';
-    el('binAddress').value = bin.address || '';
-    el('binFileInput').value = '';
-    binPhotoDataUrl = bin.photo || null;
-    if(bin.photo){
-      el('binPreviewImg').src = bin.photo;
-      el('binPreviewWrap').style.display = 'block';
-      el('binPhotoDrop').style.display = 'none';
-    } else {
-      el('binPreviewWrap').style.display = 'none';
-      el('binPhotoDrop').style.display = 'block';
-    }
-    el('addFieldError').style.display = 'none';
-    el('saveBinBtn').classList.remove('inactive');
-
-    if(tempMarker){ map.removeLayer(tempMarker); tempMarker = null; }
-
-    el('addOverlay').classList.add('open');
-  };
-
-  function closeAddSheet(){
-    el('addOverlay').classList.remove('open');
-    if(tempMarker){ map.removeLayer(tempMarker); tempMarker = null; }
-    pendingLatLng = null;
-    editingBinId = null;
-  }
-
-  document.querySelectorAll('.type-chip').forEach(function(chip){
-    chip.addEventListener('click', function(){
-      document.querySelectorAll('.type-chip').forEach(function(c){ c.classList.remove('selected'); });
-      chip.classList.add('selected');
-      selectedType = chip.getAttribute('data-type');
-      el('saveBinBtn').classList.remove('inactive');
-      el('addFieldError').style.display = 'none';
-      if(tempMarker){ tempMarker.setIcon(solidIcon(selectedType)); }
-    });
-  });
-  el('cancelAddBtn').addEventListener('click', closeAddSheet);
-
-  el('binPhotoDrop').addEventListener('click', function(){ el('binFileInput').click(); });
-  el('binFileInput').addEventListener('change', async function(e){
-    var file = e.target.files[0];
-    if(!file) return;
-    try{
-      binPhotoDataUrl = await fileToCompressedDataUrl(file, 480, 0.6);
-      el('binPreviewImg').src = binPhotoDataUrl;
-      el('binPreviewWrap').style.display = 'block';
-      el('binPhotoDrop').style.display = 'none';
-    }catch(err){
-      showToast('사진을 불러오지 못했어요. 다른 사진을 시도해주세요.');
-    }
-  });
-  el('binPhotoRemove').addEventListener('click', function(){
-    binPhotoDataUrl = null;
-    el('binFileInput').value = '';
-    el('binPreviewWrap').style.display = 'none';
-    el('binPhotoDrop').style.display = 'block';
-  });
-
-  el('saveBinBtn').addEventListener('click', async function(){
-    if(!editingBinId && !pendingLatLng) return;
-    if(!selectedType){
-      el('addFieldError').style.display = 'block';
-      return;
-    }
-
-    var note = el('binNote').value.trim().slice(0,80);
-    var address = el('binAddress').value.trim().slice(0,120);
-    var photo = binPhotoDataUrl;
-    el('saveBinBtn').classList.add('inactive');
-
-    if(editingBinId){
-      var idx = bins.findIndex(function(b){ return b.id === editingBinId; });
-      if(idx === -1){ closeAddSheet(); return; }
-      var original = bins[idx];
-      var updated = Object.assign({}, original, {type:selectedType, note:note, address:address, photo:photo});
-      bins[idx] = updated;
-      var okEdit = await saveBins();
-      if(!okEdit){ bins[idx] = original; el('saveBinBtn').classList.remove('inactive'); }
-      else { renderBinMarkers(); closeAddSheet(); }
-    } else {
-      var newBin = {
-        id:'bin_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
-        lat:pendingLatLng.lat, lng:pendingLatLng.lng,
-        type:selectedType, note:note, address:address, photo:photo, createdAt:Date.now()
-      };
-      bins.push(newBin);
-      var ok = await saveBins();
-      if(!ok){ bins.pop(); el('saveBinBtn').classList.remove('inactive'); }
-      else { renderBinMarkers(); closeAddSheet(); }
-    }
-  });
-
-  var confirmCallback = null;
-  function showConfirm(message, onConfirm){
-    el('confirmMessage').textContent = message;
-    confirmCallback = onConfirm;
-    el('confirmOverlay').classList.add('open');
-  }
-  el('confirmYesBtn').addEventListener('click', function(){
-    el('confirmOverlay').classList.remove('open');
-    var cb = confirmCallback; confirmCallback = null;
-    if(cb) cb();
-  });
-  el('confirmNoBtn').addEventListener('click', function(){
-    el('confirmOverlay').classList.remove('open');
-    confirmCallback = null;
-  });
-
-  window.__deleteBin = async function(id){
-    showConfirm('이 쓰레기통 정보를 삭제할까요?', async function(){
-      var idx = bins.findIndex(function(b){ return b.id === id; });
-      if(idx === -1) return;
-      var removed = bins.splice(idx,1)[0];
-      var ok = await saveBins();
-      if(ok){
-        renderBinMarkers(); map.closePopup();
-        if(removed.id && removed.id.indexOf('bin_seed_') === 0){
-          await addDeletedSeedKey(removed.lat.toFixed(6)+','+removed.lng.toFixed(6)+','+removed.type);
-        }
-      } else {
-        bins.push(removed);
-      }
-    });
-  };
-
-  // ---- legend ----
-  el('modeBadge').addEventListener('click', function(){
-    if(deleteMode){ deleteMode = false; updateModeUI(); }
-  });
-
-  el('legendBtn').addEventListener('click', function(){ el('legendOverlay').classList.add('open'); });
-  el('closeLegendBtn').addEventListener('click', function(){ el('legendOverlay').classList.remove('open'); });
-
-  // ---- admin PIN flow ----
-  el('adminBtn').addEventListener('click', function(){
-    renderAdminBody();
-    el('adminOverlay').classList.add('open');
-  });
-  function closeAdminSheet(){ el('adminOverlay').classList.remove('open'); }
-
-  function renderAdminBody(){
-    var body = el('adminBody');
-    if(adminMode){
-      var deleteBtnLabel = deleteMode ? '삭제 모드 끄기' : '삭제 모드 켜기';
-      var deleteBtnColor = deleteMode ? 'var(--ink)' : 'var(--danger)';
-      body.innerHTML =
-        '<h2>관리자 모드 사용 중</h2>'+
-        '<p class="sub">지도를 누르면 바로 쓰레기통이 등록돼요. 삭제 모드를 켜면 쓰레기통을 눌렀을 때 바로 삭제할 수 있어요.</p>'+
-        '<div class="btn-row"><button class="secondary" id="adminCloseBtn" style="flex:1;">닫기</button><button class="primary" id="deleteModeBtn" style="flex:1;background:'+deleteBtnColor+';">'+deleteBtnLabel+'</button></div>'+
-        '<div class="btn-row"><button class="primary" id="adminLogoutBtn" style="flex:1;background:var(--danger);">관리자 모드 끄기</button></div>';
-      el('adminCloseBtn').addEventListener('click', closeAdminSheet);
-      el('deleteModeBtn').addEventListener('click', function(){
-        deleteMode = !deleteMode;
-        updateModeUI();
-        closeAdminSheet();
-      });
-      el('adminLogoutBtn').addEventListener('click', async function(){
-        adminMode = false;
-        deleteMode = false;
-        await storageSetSafe('isAdmin', 'false', false);
-        updateModeUI(); renderBinMarkers();
-        closeAdminSheet();
-      });
-    } else if(!ownerPinHash){
-      body.innerHTML =
-        '<h2>관리자 비밀번호 만들기</h2>'+
-        '<p class="sub">이 지도의 관리자로 등록해요. 비밀번호를 아는 사람만 쓰레기통을 직접 등록할 수 있어요.</p>'+
-        '<label class="field-label">비밀번호 (4자 이상)</label>'+
-        '<input type="password" id="pinInput1" placeholder="비밀번호 입력">'+
-        '<label class="field-label">비밀번호 확인</label>'+
-        '<input type="password" id="pinInput2" placeholder="다시 입력">'+
-        '<p class="field-error" id="pinError">비밀번호가 일치하지 않거나 너무 짧아요.</p>'+
-        '<div class="btn-row"><button class="secondary" id="adminCancelBtn" style="flex:1;">취소</button><button class="primary" id="pinSetBtn" style="flex:1;">설정하기</button></div>';
-      el('adminCancelBtn').addEventListener('click', closeAdminSheet);
-      el('pinSetBtn').addEventListener('click', async function(){
-        var p1 = el('pinInput1').value, p2 = el('pinInput2').value;
-        if(p1.length < 4 || p1 !== p2){ el('pinError').style.display = 'block'; return; }
-        el('pinSetBtn').disabled = true;
-        var hash = await sha256Hex(p1);
-        var ok1 = await storageSetSafe('ownerAuth', JSON.stringify({pinHash:hash}), true);
-        var ok2 = ok1 && await storageSetSafe('isAdmin', 'true', false);
-        el('pinSetBtn').disabled = false;
-        if(ok1 && ok2){
-          ownerPinHash = hash; adminMode = true;
-          updateModeUI(); renderBinMarkers();
-          closeAdminSheet();
-        }
-        // on failure, storageSetSafe already showed a toast explaining why
-      });
-    } else {
-      body.innerHTML =
-        '<h2>관리자 비밀번호 입력</h2>'+
-        '<p class="sub">등록 권한을 가진 관리자만 입력할 수 있어요.</p>'+
-        '<input type="password" id="pinInput" placeholder="비밀번호 입력">'+
-        '<p class="field-error" id="pinError">비밀번호가 올바르지 않아요.</p>'+
-        '<div class="btn-row"><button class="secondary" id="adminCancelBtn" style="flex:1;">취소</button><button class="primary" id="pinCheckBtn" style="flex:1;">확인</button></div>';
-      el('adminCancelBtn').addEventListener('click', closeAdminSheet);
-      el('pinCheckBtn').addEventListener('click', async function(){
-        var p = el('pinInput').value;
-        var hash = await sha256Hex(p);
-        if(hash === ownerPinHash){
-          adminMode = true;
-          await storageSetSafe('isAdmin', 'true', false);
-          updateModeUI(); renderBinMarkers();
-          closeAdminSheet();
-        } else {
-          el('pinError').style.display = 'block';
-        }
-      });
-    }
-  }
 
   // ---- Photo / AI recycling helper ----
   var selectedFile = null;
