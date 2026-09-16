@@ -1956,18 +1956,35 @@
           parts: parts
         })
       });
-      if(!response.ok) throw new Error("API 요청 실패 (" + response.status + ")");
-
       var data = await response.json();
+      console.log('analyze response', response.status, data);
+
+      if(!response.ok){
+        var apiErrMsg = (data && data.error && (data.error.message || JSON.stringify(data.error))) || ('HTTP ' + response.status);
+        throw new Error(apiErrMsg);
+      }
+
       var candidate = data.candidates && data.candidates[0];
-      var textOut = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0] && candidate.content.parts[0].text;
-      if(!textOut) throw new Error("응답을 읽을 수 없어요.");
+      if(!candidate){
+        throw new Error('응답에 candidates가 없어요' + (data.promptFeedback ? (': ' + JSON.stringify(data.promptFeedback)) : ''));
+      }
+      if(candidate.finishReason && candidate.finishReason !== 'STOP'){
+        throw new Error('finishReason: ' + candidate.finishReason);
+      }
+      var textOut = candidate.content && candidate.content.parts && candidate.content.parts[0] && candidate.content.parts[0].text;
+      if(!textOut) throw new Error('candidate에 text가 없어요: ' + JSON.stringify(candidate).slice(0,300));
 
       var raw = textOut.trim().replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
-      var parsed = JSON.parse(raw);
+      var parsed;
+      try{
+        parsed = JSON.parse(raw);
+      }catch(parseErr){
+        throw new Error('JSON 파싱 실패: ' + raw.slice(0,300));
+      }
       renderResult(parsed);
     }catch(err){
-      area.innerHTML = '<div class="error-text">분석에 실패했어요. 다시 시도해주세요.</div>';
+      var msg = (err && err.message) ? err.message : String(err);
+      area.innerHTML = '<div class="error-text">분석에 실패했어요.<br><span style="font-size:11px;opacity:0.8;word-break:break-all;">' + escapeHtml(msg) + '</span></div>';
     }finally{
       updateAnalyzeAvailability();
     }
