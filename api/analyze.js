@@ -38,8 +38,9 @@ module.exports = async function handler(req, res) {
         contents: [{ role: 'user', parts: body.parts }],
         systemInstruction: { parts: [{ text: body.system }] },
         generationConfig: {
-          maxOutputTokens: 1000,
-          responseMimeType: 'application/json'
+          maxOutputTokens: 3000,
+          responseMimeType: 'application/json',
+          thinkingConfig: { thinkingBudget: 0 }
         }
       })
     });
