@@ -2,7 +2,7 @@
 // The API key lives only in Vercel's environment variables (GEMINI_API_KEY),
 // never in the page's client-side code.
 
-var GEMINI_MODEL = 'gemini-2.5-flash';
+var GEMINI_MODEL = 'gemini-3.6-flash';
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
