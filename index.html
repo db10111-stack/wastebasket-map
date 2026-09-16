@@ -1,0 +1,2001 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>대전 쓰레기통 지도</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root{
+    --bg:#F2F5EF;
+    --surface:#FFFFFF;
+    --ink:#16231A;
+    --ink-soft:#586257;
+    --line:#DDE4D8;
+    --recycle:#1D6F8C;   --recycle-bg:#E4F0F5;
+    --food:#6B8F3E;      --food-bg:#EEF3E3;
+    --general:#756F63;   --general-bg:#EFEDE7;
+    --cigarette:#B98A3D; --cigarette-bg:#F5EDDC;
+    --battery:#6E5A9E;   --battery-bg:#ECE8F4;
+    --clothing:#B23A63;  --clothing-bg:#F5E3EA;
+    --danger:#B4432F;
+    --radius:16px;
+    --radius-sm:10px;
+    --shadow:0 6px 20px rgba(22,35,26,0.12);
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;height:100%;
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Segoe UI",sans-serif;
+    color:var(--ink);
+    background:var(--bg);
+    overflow:hidden;
+  }
+  #app{position:relative;height:100vh;height:calc(var(--app-height, 100vh));width:100%;display:flex;flex-direction:column;}
+
+  header{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:12px 14px;background:var(--surface);
+    border-bottom:1px solid var(--line);
+    z-index:20;
+  }
+  header h1{font-size:16px;margin:0;font-weight:700;letter-spacing:-0.01em;}
+  header p{margin:2px 0 0;font-size:11.5px;color:var(--ink-soft);}
+  .icon-row{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+  .icon-btn{
+    width:38px;height:38px;border-radius:50%;border:1px solid var(--line);
+    background:var(--bg);display:flex;align-items:center;justify-content:center;
+    font-size:16px;cursor:pointer;
+  }
+  .icon-btn.active{background:var(--ink);border-color:var(--ink);}
+  .icon-btn.active span{filter:invert(1);}
+
+  #map{flex:1;width:100%;height:100%;z-index:1;}
+  .map-wrap{position:relative;flex:1;width:100%;min-height:0;}
+
+  .fab-stack{position:absolute;left:16px;bottom:24px;z-index:30;display:flex;flex-direction:column;align-items:flex-start;gap:10px;}
+  .fab-locate{
+    background:var(--surface);color:var(--ink);border:1px solid var(--line);
+    border-radius:999px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;
+    box-shadow:var(--shadow);cursor:pointer;font-size:16px;
+  }
+  .fab-locate.locating{opacity:0.55;}
+  .fab{
+    background:var(--recycle);color:#fff;border:none;
+    border-radius:999px;padding:14px 20px;
+    display:flex;align-items:center;gap:8px;
+    font-size:14px;font-weight:600;
+    box-shadow:var(--shadow);cursor:pointer;
+  }
+  .fab:active{transform:scale(0.97);}
+
+  .search-bar{
+    position:absolute;top:12px;left:12px;right:12px;z-index:16;
+    display:flex;gap:8px;background:var(--surface);border-radius:999px;
+    padding:4px 4px 4px 16px;box-shadow:var(--shadow);align-items:center;
+  }
+  .search-bar input{
+    flex:1;border:none;background:transparent;font-size:13.5px;padding:9px 0;
+    font-family:inherit;color:var(--ink);
+  }
+  .search-bar input:focus{outline:none;}
+  .search-bar button{
+    width:36px;height:36px;border-radius:50%;border:none;background:var(--ink);
+    color:#fff;font-size:14px;cursor:pointer;flex-shrink:0;
+  }
+
+  .mode-badge{
+    position:absolute;top:68px;left:50%;transform:translateX(-50%);
+    background:var(--recycle-bg);border:1px solid var(--recycle-bg);color:var(--recycle);
+    padding:7px 14px;border-radius:999px;font-size:12px;font-weight:700;
+    box-shadow:var(--shadow);z-index:15;
+    display:none;align-items:center;gap:6px;
+  }
+  .mode-dot{width:7px;height:7px;border-radius:50%;background:var(--recycle);}
+
+  .sheet-overlay{
+    position:fixed;inset:0;background:rgba(22,35,26,0.35);
+    display:none;align-items:flex-end;justify-content:center;z-index:100;
+  }
+  .sheet-overlay.open{display:flex;}
+  .sheet{
+    background:var(--surface);width:100%;max-width:480px;
+    border-radius:20px 20px 0 0;padding:20px 20px 26px;
+    max-height:85vh;overflow-y:auto;
+    animation:slideUp .25s ease;
+  }
+  @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  .sheet-handle{width:36px;height:4px;background:var(--line);border-radius:2px;margin:0 auto 16px;}
+  .sheet h2{margin:0 0 4px;font-size:18px;}
+  .sheet .sub{margin:0 0 18px;font-size:13px;color:var(--ink-soft);line-height:1.5;}
+
+  label.field-label{display:block;font-size:12.5px;font-weight:600;color:var(--ink-soft);margin:16px 0 8px;}
+  input[type=text],input[type=password]{
+    width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:var(--radius-sm);
+    font-size:14px;font-family:inherit;background:var(--bg);
+  }
+  input[type=text]:focus,input[type=password]:focus{outline:2px solid var(--recycle);outline-offset:1px;}
+
+  .type-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .type-chip{
+    border:1.5px solid var(--line);border-radius:12px;padding:16px 8px;
+    text-align:center;cursor:pointer;background:var(--surface);
+    font-size:14px;font-weight:700;color:var(--ink-soft);
+    transition:border-color .15s, background .15s;
+  }
+  .type-chip .dot{width:18px;height:18px;border-radius:50%;margin:0 auto 8px;}
+  .type-chip[data-type="general"] .dot{background:var(--general);}
+  .type-chip[data-type="recycle"] .dot{background:var(--recycle);}
+  .type-chip[data-type="food"] .dot{background:var(--food);}
+  .type-chip[data-type="cigarette"] .dot{background:var(--cigarette);}
+  .type-chip[data-type="battery"] .dot{background:var(--battery);}
+  .type-chip[data-type="clothing"] .dot{background:var(--clothing);}
+  .type-chip.selected[data-type="general"]{border-color:var(--general);background:var(--general-bg);color:var(--ink);}
+  .type-chip.selected[data-type="recycle"]{border-color:var(--recycle);background:var(--recycle-bg);color:var(--ink);}
+  .type-chip.selected[data-type="food"]{border-color:var(--food);background:var(--food-bg);color:var(--ink);}
+  .type-chip.selected[data-type="cigarette"]{border-color:var(--cigarette);background:var(--cigarette-bg);color:var(--ink);}
+  .type-chip.selected[data-type="battery"]{border-color:var(--battery);background:var(--battery-bg);color:var(--ink);}
+  .type-chip.selected[data-type="clothing"]{border-color:var(--clothing);background:var(--clothing-bg);color:var(--ink);}
+
+  .btn-row{display:flex;gap:10px;margin-top:22px;}
+  button.primary, button.secondary{
+    flex:1;padding:13px;border-radius:var(--radius-sm);border:none;
+    font-size:14.5px;font-weight:700;cursor:pointer;font-family:inherit;
+  }
+  button.primary{background:var(--ink);color:#fff;}
+  button.primary.inactive{background:#B7BDB3;}
+  button.secondary{background:var(--bg);color:var(--ink-soft);border:1px solid var(--line);}
+  .field-error{color:var(--danger);font-size:12.5px;margin-top:8px;display:none;}
+
+  .photo-drop-mini{
+    border:1.5px dashed var(--line);border-radius:var(--radius-sm);
+    padding:14px;text-align:center;cursor:pointer;background:var(--bg);
+    font-size:12.5px;color:var(--ink-soft);
+  }
+  #binPreviewWrap{position:relative;display:none;margin-bottom:2px;}
+  #binPreviewImg{width:100%;border-radius:var(--radius-sm);max-height:160px;object-fit:cover;display:block;}
+  #binPhotoRemove{
+    position:absolute;top:8px;right:8px;background:rgba(22,35,26,0.65);color:#fff;
+    border:none;border-radius:999px;width:26px;height:26px;font-size:14px;cursor:pointer;
+  }
+
+  .photo-drop{
+    border:1.5px dashed var(--line);border-radius:var(--radius);
+    padding:26px 16px;text-align:center;cursor:pointer;background:var(--bg);
+  }
+  .photo-drop p{margin:10px 0 0;font-size:13px;color:var(--ink-soft);}
+  #previewImg{width:100%;border-radius:var(--radius);display:none;margin-bottom:14px;max-height:260px;object-fit:cover;}
+  .or-divider{display:flex;align-items:center;gap:10px;margin:16px 0 4px;color:var(--ink-soft);font-size:12px;}
+  .or-divider::before,.or-divider::after{content:"";flex:1;height:1px;background:var(--line);}
+
+  .loading-row{display:flex;align-items:center;gap:10px;padding:18px 4px;color:var(--ink-soft);font-size:13.5px;}
+  .spinner{width:18px;height:18px;border:2.5px solid var(--line);border-top-color:var(--recycle);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .result-card{border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:14px;}
+  .result-badge{display:inline-block;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:700;margin-bottom:10px;}
+  .result-badge.general{background:var(--general-bg);color:var(--general);}
+  .result-badge.recycle{background:var(--recycle-bg);color:var(--recycle);}
+  .result-badge.food{background:var(--food-bg);color:var(--food);}
+  .result-badge.cigarette{background:var(--cigarette-bg);color:var(--cigarette);}
+  .result-badge.battery{background:var(--battery-bg);color:var(--battery);}
+  .result-badge.clothing{background:var(--clothing-bg);color:var(--clothing);}
+  .result-item{font-size:15px;font-weight:700;margin:0 0 10px;}
+  .result-steps{margin:0;padding-left:18px;font-size:13.5px;line-height:1.65;color:var(--ink);}
+  .result-tip{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line);font-size:12.5px;color:var(--ink-soft);line-height:1.5;}
+  .error-text{color:var(--danger);font-size:13.5px;padding:14px 4px;}
+
+  .popup-title{font-weight:700;font-size:13.5px;margin-bottom:2px;}
+  .popup-note{font-size:12px;color:#586257;margin-bottom:8px;}
+  .popup-photo-label{font-size:11px;color:var(--ink-soft);margin-bottom:4px;}
+  .popup-actions{display:flex;gap:10px;}
+  .popup-del{font-size:12px;color:var(--danger);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline;font-family:inherit;}
+
+  .legend-row{display:flex;align-items:center;gap:10px;padding:9px 0;font-size:13.5px;}
+  .legend-row .dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;}
+
+  input[type=file]{display:none;}
+
+  #appToast{
+    position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(12px);
+    background:var(--ink);color:#fff;padding:12px 18px;border-radius:999px;
+    font-size:13px;font-weight:600;max-width:88%;text-align:center;
+    box-shadow:0 8px 24px rgba(0,0,0,0.3);
+    z-index:500;opacity:0;pointer-events:none;transition:opacity .25s ease, transform .25s ease;
+  }
+  #appToast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <header>
+    <div>
+      <h1>대전 쓰레기통 지도</h1>
+      <p id="headerSub">대전광역시 전체</p>
+    </div>
+    <div class="icon-row">
+      <button class="icon-btn" id="legendBtn" title="범례"><span>ℹ️</span></button>
+      <button class="icon-btn" id="adminBtn" title="관리자 모드"><span id="adminIcon">🔒</span></button>
+    </div>
+  </header>
+
+  <div class="map-wrap">
+    <div id="map"></div>
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="동네, 주소, 건물 이름 검색">
+      <button id="searchBtn" title="검색">🔍</button>
+    </div>
+    <div class="mode-badge" id="modeBadge"><span class="mode-dot"></span><span id="modeBadgeText"></span></div>
+
+    <div class="fab-stack">
+      <button class="fab-locate" id="locateBtn" title="내 위치로 돌아가기">📍</button>
+      <button class="fab" id="openPhotoBtn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        분리수거 확인
+      </button>
+    </div>
+  </div>
+</div>
+<div id="appToast"></div>
+
+<!-- Add bin sheet (admin only) -->
+<div class="sheet-overlay" id="addOverlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2 id="addTitle">쓰레기통 등록</h2>
+    <p class="sub" id="addSub">선택한 위치에 쓰레기통 정보를 바로 등록합니다.</p>
+
+    <label class="field-label">종류</label>
+    <div class="type-grid">
+      <div class="type-chip" data-type="general"><div class="dot"></div>🗑️ 일반쓰레기</div>
+      <div class="type-chip" data-type="recycle"><div class="dot"></div>♻️ 재활용</div>
+    </div>
+
+    <label class="field-label">주소 (선택)</label>
+    <input type="text" id="binAddress" placeholder="예: 대전 서구 도안동 123-4">
+
+    <label class="field-label">위치 설명 (선택)</label>
+    <input type="text" id="binNote" placeholder="예: 공원 입구 옆, 편의점 앞">
+
+    <label class="field-label">사진 (선택)</label>
+    <div id="binPreviewWrap">
+      <img id="binPreviewImg" alt="쓰레기통 사진">
+      <button type="button" id="binPhotoRemove">✕</button>
+    </div>
+    <div class="photo-drop-mini" id="binPhotoDrop">📷 쓰레기통 사진 추가</div>
+    <input type="file" id="binFileInput" accept="image/*" capture="environment">
+    <p class="field-error" id="addFieldError">종류를 선택해주세요.</p>
+
+    <div class="btn-row">
+      <button class="secondary" id="cancelAddBtn">취소</button>
+      <button class="primary inactive" id="saveBinBtn">등록하기</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin PIN sheet (dynamic content) -->
+<div class="sheet-overlay" id="adminOverlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div id="adminBody"></div>
+  </div>
+</div>
+
+<!-- Legend sheet -->
+<div class="sheet-overlay" id="legendOverlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2>범례</h2>
+    <p class="sub">쓰레기통 종류예요.</p>
+    <div class="legend-row"><div class="dot" style="background:var(--general)"></div>🗑️ 일반쓰레기</div>
+    <div class="legend-row"><div class="dot" style="background:var(--recycle)"></div>♻️ 재활용</div>
+    <div class="btn-row"><button class="secondary" id="closeLegendBtn" style="flex:1;">닫기</button></div>
+  </div>
+</div>
+
+<!-- Confirm sheet (replaces native confirm(), which is unreliable in this sandbox) -->
+<div class="sheet-overlay" id="confirmOverlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2>확인해주세요</h2>
+    <p class="sub" id="confirmMessage"></p>
+    <div class="btn-row">
+      <button class="secondary" id="confirmNoBtn" style="flex:1;">취소</button>
+      <button class="primary" id="confirmYesBtn" style="flex:1;background:var(--danger);">삭제</button>
+    </div>
+  </div>
+</div>
+
+<!-- Photo analysis sheet -->
+<div class="sheet-overlay" id="photoOverlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2>AI 분리수거 도우미</h2>
+    <p class="sub">사진을 찍거나 제품 이름만 입력해도 분리배출 방법을 알려드려요.</p>
+
+    <img id="previewImg" alt="선택한 사진 미리보기">
+
+    <div class="photo-drop" id="photoDrop">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#586257" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      <p>탭해서 사진 촬영 또는 업로드</p>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" capture="environment">
+
+    <div class="or-divider">또는</div>
+    <label class="field-label">제품 이름으로 확인</label>
+    <input type="text" id="itemNameInput" placeholder="예: 요구르트병, 건전지, 우산">
+
+    <div id="analysisArea"></div>
+
+    <div class="btn-row" id="photoBtnRow">
+      <button class="secondary" id="retakeBtn" style="display:none;">사진 제거</button>
+      <button class="primary" id="analyzeBtn" disabled>분석하기</button>
+    </div>
+    <div class="btn-row">
+      <button class="secondary" id="closePhotoBtn" style="flex:1;">닫기</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  var TYPE_META = {
+    general:{ label:"일반쓰레기", color:"#756F63", icon:"🗑️"},
+    recycle:{ label:"재활용",     color:"#1D6F8C", icon:"♻️"}
+  };
+  var DAEJEON_CENTER = [36.3504, 127.3845]; // 대전광역시 대략 중심
+
+  var bins = [];
+  var ownerPinHash = null;
+  var adminMode = false;
+  var deleteMode = false;
+
+  var map, tempMarker = null, pendingLatLng = null, selectedType = null, editingBinId = null;
+  var binLayer;
+  var binPhotoDataUrl = null;
+  var userLocationMarker = null, userAccuracyCircle = null, watchId = null;
+
+  function el(id){ return document.getElementById(id); }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  async function sha256Hex(str){
+    var enc = new TextEncoder().encode(str);
+    var buf = await crypto.subtle.digest('SHA-256', enc);
+    return Array.from(new Uint8Array(buf)).map(function(b){ return b.toString(16).padStart(2,'0'); }).join('');
+  }
+  function fileToCompressedDataUrl(file, maxDim, quality){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(e){
+        var img = new Image();
+        img.onload = function(){
+          var w = img.width, h = img.height;
+          var scale = Math.min(1, maxDim / Math.max(w, h));
+          var cw = Math.max(1, Math.round(w * scale));
+          var ch = Math.max(1, Math.round(h * scale));
+          var canvas = document.createElement('canvas');
+          canvas.width = cw; canvas.height = ch;
+          canvas.getContext('2d').drawImage(img, 0, 0, cw, ch);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = reject;
+        img.src = e.target.result;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  var toastTimer = null;
+  function showToast(msg, duration){
+    var toast = el('appToast');
+    if(!toast) return;
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toast.classList.remove('show'); }, duration || 3200);
+  }
+
+  // ==== STORAGE BACKEND (Netlify build) ====
+  // Shared/community data -> JSONBin.io (one JSON document, cached in memory, read-modify-write).
+  // Per-device data (isAdmin flag) -> real browser localStorage, since this is now a genuine standalone site.
+  var JSONBIN_ID = '___JSONBIN_ID___';
+  var JSONBIN_KEY = '___JSONBIN_KEY___';
+  var JSONBIN_BASE = 'https://api.jsonbin.io/v3/b/' + JSONBIN_ID;
+  var remoteStore = null; // lazy-loaded cache of the whole bin
+
+  async function jsonbinRead(){
+    try{
+      var res = await fetch(JSONBIN_BASE + '/latest', { headers: { 'X-Master-Key': JSONBIN_KEY } });
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      var data = await res.json();
+      return data.record || {};
+    }catch(e){
+      console.error('jsonbin read error', e);
+      return null;
+    }
+  }
+  async function jsonbinWrite(record){
+    try{
+      var res = await fetch(JSONBIN_BASE, {
+        method:'PUT',
+        headers:{ 'Content-Type':'application/json', 'X-Master-Key': JSONBIN_KEY },
+        body: JSON.stringify(record)
+      });
+      return res.ok;
+    }catch(e){
+      console.error('jsonbin write error', e);
+      return false;
+    }
+  }
+  async function ensureStoreLoaded(){
+    if(remoteStore === null){
+      var rec = await jsonbinRead();
+      remoteStore = rec || {};
+    }
+    return remoteStore;
+  }
+
+  function wait(ms){ return new Promise(function(res){ setTimeout(res, ms); }); }
+
+  async function storageSetSafe(key, value, shared){
+    if(!shared){
+      try{ localStorage.setItem('local_'+key, value); return true; }
+      catch(e){ showToast('이 기기에 저장하지 못했어요.'); return false; }
+    }
+    for(var attempt=0; attempt<2; attempt++){
+      await ensureStoreLoaded();
+      remoteStore[key] = value;
+      var ok = await jsonbinWrite(remoteStore);
+      if(ok) return true;
+      if(attempt === 0){ await wait(700); continue; }
+      showToast('저장에 실패했어요. 네트워크 상태를 확인하고 다시 시도해주세요.', 5000);
+      return false;
+    }
+    return false;
+  }
+  async function storageGetSafe(key, shared){
+    if(!shared){
+      try{
+        var v = localStorage.getItem('local_'+key);
+        return v === null ? null : { value: v };
+      }catch(e){ return null; }
+    }
+    var store = await ensureStoreLoaded();
+    if(store === null || !(key in store)) return null;
+    return { value: store[key] };
+  }
+
+  // ---- icons ----
+  function solidIcon(type, size){
+    size = size || 26;
+    var meta = TYPE_META[type] || TYPE_META.general;
+    var fontSize = Math.max(8, Math.round(size * 0.46));
+    return L.divIcon({
+      className:"",
+      html:
+        '<div style="width:'+size+'px;height:'+size+'px;border-radius:50% 50% 50% 0;background:'+meta.color+';transform:rotate(-45deg);border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;">'+
+          '<span style="transform:rotate(45deg);font-size:'+fontSize+'px;line-height:1;">'+meta.icon+'</span>'+
+        '</div>',
+      iconSize:[size,size], iconAnchor:[size/2,size]
+    });
+  }
+  function iconSizeForZoom(zoom){
+    if(zoom <= 12) return 12;
+    if(zoom <= 13) return 15;
+    if(zoom <= 14) return 18;
+    if(zoom <= 15) return 21;
+    if(zoom <= 16) return 24;
+    return 26;
+  }
+  function userDotIcon(){
+    return L.divIcon({
+      className:"",
+      html:'<div style="width:16px;height:16px;border-radius:50%;background:#1D6F8C;border:3px solid #fff;box-shadow:0 0 0 3px rgba(29,111,140,0.3),0 2px 6px rgba(0,0,0,0.3);"></div>',
+      iconSize:[16,16], iconAnchor:[8,8]
+    });
+  }
+
+  // ---- map ----
+  function initMap(){
+    map = L.map('map', {zoomControl:true}).setView(DAEJEON_CENTER, 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom:19,
+      attribution:'&copy; OpenStreetMap contributors'
+    }).addTo(map);
+    binLayer = L.layerGroup().addTo(map);
+
+    map.on('click', function(e){
+      if(deleteMode) return;
+      if(adminMode){ openAddSheet(e.latlng); }
+    });
+
+    var lastIconSize = null;
+    map.on('zoomend', function(){
+      var size = iconSizeForZoom(map.getZoom());
+      if(size === lastIconSize) return;
+      lastIconSize = size;
+      binLayer.eachLayer(function(marker){
+        marker.setIcon(solidIcon(marker.binType, size));
+      });
+    });
+
+    boot();
+    autoShowMyLocation();
+  }
+
+  function updateUserLocation(lat, lng, accuracy){
+    var latlng = [lat, lng];
+    if(!userLocationMarker){
+      userLocationMarker = L.marker(latlng, {icon:userDotIcon(), zIndexOffset:1000}).addTo(map);
+      userLocationMarker.bindPopup('<div class="popup-title">내 위치</div>', {closeButton:false});
+    } else {
+      userLocationMarker.setLatLng(latlng);
+    }
+    if(accuracy){
+      if(!userAccuracyCircle){
+        userAccuracyCircle = L.circle(latlng, {radius:accuracy, color:'#1D6F8C', weight:1, fillColor:'#1D6F8C', fillOpacity:0.1, opacity:0.25}).addTo(map);
+      } else {
+        userAccuracyCircle.setLatLng(latlng);
+        userAccuracyCircle.setRadius(accuracy);
+      }
+    }
+  }
+
+  function startWatchingLocation(){
+    if(watchId !== null || !navigator.geolocation) return;
+    watchId = navigator.geolocation.watchPosition(
+      function(pos){ updateUserLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy); },
+      function(){ /* silently ignore ongoing tracking errors */ },
+      {enableHighAccuracy:true, maximumAge:10000}
+    );
+  }
+
+  function autoShowMyLocation(){
+    if(!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      function(pos){
+        updateUserLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+        startWatchingLocation();
+      },
+      function(){ /* permission not granted yet or unavailable - stay silent */ },
+      {maximumAge:60000, timeout:8000}
+    );
+  }
+
+  // ---- location search (offline gazetteer - 대전 83개 행정동) ----
+  var DONG_GAZETTEER = {
+    '은행선화동':[36.3297955,127.4202989],
+    '대흥동':[36.3229238,127.4246503],
+    '문창동':[36.3179331,127.4357602],
+    '석교동':[36.3059004,127.4384519],
+    '대사동':[36.3145985,127.4222833],
+    '부사동':[36.3130924,127.4322437],
+    '유천1동':[36.3156438,127.392745],
+    '유천2동':[36.3181359,127.399515],
+    '문화1동':[36.3126823,127.4118722],
+    '문화2동':[36.3077633,127.401876],
+    '산성동':[36.2648464,127.404001],
+    '오류동':[36.3251991,127.4052143],
+    '목동':[36.3337002,127.4088206],
+    '중촌동':[36.3408899,127.4092204],
+    '태평1동':[36.3279159,127.3973676],
+    '태평2동':[36.3212489,127.3929083],
+    '오정동':[36.3538616,127.4140773],
+    '대화동':[36.3685399,127.4088828],
+    '신탄진동':[36.4436504,127.4583763],
+    '석봉동':[36.4490954,127.4244898],
+    '목상동':[36.4410986,127.4066156],
+    '덕암동':[36.4334509,127.4252982],
+    '법동':[36.3709337,127.426636],
+    '송촌동':[36.3626941,127.4419947],
+    '중리동':[36.361593,127.4268601],
+    '비래동':[36.3598133,127.4531179],
+    '장동':[36.4038415,127.4447815],
+    '진잠동':[36.3038433,127.293403],
+    '온천1동':[36.3550858,127.3265767],
+    '온천2동':[36.3689775,127.3459459],
+    '노은동':[36.3680877,127.3190151],
+    '지족동':[36.3822168,127.304288],
+    '반석동':[36.3941604,127.2991757],
+    '봉명동':[36.3535812,127.3460745],
+    '장대동':[36.3619929,127.3326378],
+    '궁동':[36.3674097,127.3454477],
+    '상대동':[36.342342,127.3327949],
+    '원촌동':[36.376771,127.402904],
+    '전민동':[36.399769,127.403827],
+    '관평동':[36.424048,127.388777],
+    '탑립동':[36.416345,127.406623],
+    '신성동':[36.389247,127.347006],
+    '원신흥동':[36.338155,127.341123],
+    '도안동(유성)':[36.3285,127.3495],
+    '복수동':[36.3023753,127.3766374],
+    '정림동':[36.293796,127.3638981],
+    '기성동':[36.2423044,127.3237739],
+    '도마동':[36.3194327,127.3780209],
+    '변동':[36.3266295,127.3803437],
+    '괴정동':[36.3384852,127.3754881],
+    '가장동':[36.3308848,127.3854289],
+    '내동':[36.3330719,127.3722881],
+    '가수원동':[36.3052757,127.3505683],
+    '관저1동':[36.3054116,127.3382258],
+    '관저2동':[36.2984001,127.3403821],
+    '용문동':[36.3369566,127.3944941],
+    '탄방동':[36.3434095,127.3808786],
+    '갈마동':[36.3452207,127.3749994],
+    '둔산동':[36.352343,127.3785451],
+    '월평동':[36.361913,127.3789325],
+    '만년동':[36.354424,127.3616514],
+    '도안동':[36.3285,127.3495],
+    '중앙동':[36.3286645,127.3813814],
+    '가양동':[36.3489023,127.4431228],
+    '가오동':[36.3040978,127.4543395],
+    '대동':[36.327361,127.4444209],
+    '대성동':[36.2904053,127.4633534],
+    '삼성동':[36.3369977,127.4304598],
+    '성남동':[36.3406059,127.4350372],
+    '소제동':[36.3375066,127.4384845],
+    '신흥동':[36.3247987,127.4440678],
+    '용전동':[36.3506069,127.4389121],
+    '원동':[36.3285416,127.4337604],
+    '자양동':[36.3342577,127.4456632],
+    '정동':[36.3327723,127.4316703],
+    '중동':[36.3303949,127.4297479],
+    '천동':[36.3123213,127.4415735],
+    '판암동':[36.3178498,127.4617729],
+    '홍도동':[36.3459269,127.4192633],
+    '인동':[36.3190318,127.4425263],
+    '효동':[36.3161074,127.4398649],
+    '용운동':[36.327903,127.4532309],
+    '낭월동':[36.2847073,127.4821709],
+  };
+
+  function runSearch(){
+    var q = el('searchInput').value.trim();
+    if(!q) return;
+    var normalized = q.replace(/\s+/g, '');
+
+    // 1) exact match
+    if(DONG_GAZETTEER[normalized]){
+      map.flyTo(DONG_GAZETTEER[normalized], 16);
+      return;
+    }
+    // 2) substring match (either direction)
+    var matchKey = null;
+    for(var key in DONG_GAZETTEER){
+      if(key.indexOf(normalized) !== -1 || normalized.indexOf(key) !== -1){
+        matchKey = key; break;
+      }
+    }
+    if(matchKey){
+      map.flyTo(DONG_GAZETTEER[matchKey], 16);
+      return;
+    }
+    // 3) search our own bin data (address/note text)
+    var lowerQ = normalized;
+    var binMatch = bins.find(function(b){
+      var hay = ((b.address||'') + (b.note||'')).replace(/\s+/g, '');
+      return hay.indexOf(lowerQ) !== -1;
+    });
+    if(binMatch){
+      map.flyTo([binMatch.lat, binMatch.lng], 17);
+      return;
+    }
+
+    showToast('찾을 수 없어요. "도안동", "둔산동"처럼 동 이름으로 검색해보세요.');
+  }
+  el('searchBtn').addEventListener('click', runSearch);
+  el('searchInput').addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){ e.preventDefault(); runSearch(); }
+  });
+
+  el('locateBtn').addEventListener('click', function(){
+    if(!navigator.geolocation){ showToast('이 브라우저에서는 위치 확인을 지원하지 않아요.'); return; }
+    var btn = el('locateBtn');
+    btn.classList.add('locating');
+    navigator.geolocation.getCurrentPosition(
+      function(pos){
+        btn.classList.remove('locating');
+        updateUserLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+        map.flyTo([pos.coords.latitude, pos.coords.longitude], 17);
+        startWatchingLocation();
+      },
+      function(err){
+        btn.classList.remove('locating');
+        if(err && err.code === 1){
+          showToast('위치 권한이 꺼져 있어요. 브라우저/기기 설정에서 이 사이트의 위치 권한을 허용해주세요.', 4500);
+        } else if(err && err.code === 3){
+          showToast('위치를 가져오는 데 시간이 오래 걸려요. 다시 눌러주세요.');
+        } else {
+          showToast('위치를 가져올 수 없어요. GPS나 네트워크 상태를 확인해주세요.');
+        }
+      },
+      {enableHighAccuracy:true, timeout:10000, maximumAge:0}
+    );
+  });
+
+  // ---- boot / load state ----
+  var SEED_BINS = [
+    // 출처: 대전광역시 대덕구청 "쓰레기통설치현황" + 중구청 "가로휴지통현황" (버스정류장 설치, 일반+재활용 세트)
+    {name:'대화동 육교, 오정동방면', lat:36.3661643, lng:127.4187802, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대화동 육교, 오정동방면', lat:36.3661643, lng:127.4187802, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'원명학교, 공단방면', lat:36.3677189, lng:127.4156569, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'원명학교, 공단방면', lat:36.3677189, lng:127.4156569, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'동아연필, 공구상가 후문방향', lat:36.3682744, lng:127.4013585, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'동아연필, 공구상가 후문방향', lat:36.3682744, lng:127.4013585, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대화동행정복지센터, 아모레퍼시픽 앞', lat:36.3672916, lng:127.411722, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대화동행정복지센터, 아모레퍼시픽 앞', lat:36.3672916, lng:127.411722, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대화공단삼거리, 주유소 앞', lat:36.3686429, lng:127.419763, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대화공단삼거리, 주유소 앞', lat:36.3686429, lng:127.419763, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대화공단 삼거리, 주유소 건너편', lat:36.3680525, lng:127.4203131, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대화공단 삼거리, 주유소 건너편', lat:36.3680525, lng:127.4203131, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대화동행정복지센터, CU편의점 앞', lat:36.3671815, lng:127.4118571, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대화동행정복지센터, CU편의점 앞', lat:36.3671815, lng:127.4118571, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'와동농협와동지소 앞', lat:36.4011898, lng:127.4230687, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'와동농협와동지소 앞', lat:36.4011898, lng:127.4230687, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'오정주민센터, 세종방면 BRT', lat:36.3519745, lng:127.4118512, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'오정주민센터, 세종방면 BRT', lat:36.3519745, lng:127.4118512, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대전병원, 대전역방면', lat:36.3623681, lng:127.4177789, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대전병원, 대전역방면', lat:36.3623681, lng:127.4177789, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'한남대 정문, 한남오거리방면', lat:36.3514975, lng:127.4222116, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'한남대 정문, 한남오거리방면', lat:36.3514975, lng:127.4222116, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대전신학대학교, 한남프라자 안경 앞', lat:36.351078, lng:127.4243787, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대전신학대학교, 한남프라자 안경 앞', lat:36.351078, lng:127.4243787, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'한남오거리, 오정우체국방면', lat:36.3493642, lng:127.4163328, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'한남오거리, 오정우체국방면', lat:36.3493642, lng:127.4163328, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'한남오거리, 대덕구청방면', lat:36.3496237, lng:127.4153807, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'한남오거리, 대덕구청방면', lat:36.3496237, lng:127.4153807, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'오정네거리, 장원순대 앞', lat:36.3574367, lng:127.4155312, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'오정네거리, 장원순대 앞', lat:36.3574367, lng:127.4155312, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'농수산오거리, 대전역방면 BRT', lat:36.3548269, lng:127.4077106, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'농수산오거리, 대전역방면 BRT', lat:36.3548269, lng:127.4077106, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'농수산오거리, 둔산동방면 BRT', lat:36.3548269, lng:127.4077106, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'농수산오거리, 둔산동방면 BRT', lat:36.3548269, lng:127.4077106, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'오정동 주민센터, 대전역방면 BRT', lat:36.3520709, lng:127.4111317, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'오정동 주민센터, 대전역방면 BRT', lat:36.3520709, lng:127.4111317, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'한남오거리, 대전역방면 BRT', lat:36.3499821, lng:127.4133181, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'한남오거리, 대전역방면 BRT', lat:36.3499821, lng:127.4133181, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'한남오거리, 오정동행정복지센터 방면 BRT', lat:36.3496642, lng:127.4145144, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'한남오거리, 오정동행정복지센터 방면 BRT', lat:36.3496642, lng:127.4145144, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대덕구청, 대전역방면 BRT', lat:36.3463224, lng:127.4182051, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대덕구청, 대전역방면 BRT', lat:36.3463224, lng:127.4182051, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'회덕초등학교 앞', lat:36.3745161, lng:127.4215299, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'회덕초등학교 앞', lat:36.3745161, lng:127.4215299, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'당아래, 동아교재방면', lat:36.3748077, lng:127.417913, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'당아래, 동아교재방면', lat:36.3748077, lng:127.417913, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'읍내네거리, 대화공단삼거리방면', lat:36.3707419, lng:127.420308, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'읍내네거리, 대화공단삼거리방면', lat:36.3707419, lng:127.420308, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'제월당, 대한통운종점방면', lat:36.3782087, lng:127.4268691, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'제월당, 대한통운종점방면', lat:36.3782087, lng:127.4268691, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'읍내동 현대아파트, 대전지방국세청방면', lat:36.3782087, lng:127.4268691, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'읍내동 현대아파트, 대전지방국세청방면', lat:36.3782087, lng:127.4268691, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'와동초등학교, 와동초등학교 담 뒤', lat:36.3970819, lng:127.4221251, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'와동초등학교, 와동초등학교 담 뒤', lat:36.3970819, lng:127.4221251, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'선비마을2단지, 선비마을입구방면', lat:36.3686042, lng:127.4389096, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'선비마을2단지, 선비마을입구방면', lat:36.3686042, lng:127.4389096, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'중리네거리, 증산도교육문회회관방면', lat:36.3591077, lng:127.4283761, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'중리네거리, 증산도교육문회회관방면', lat:36.3591077, lng:127.4283761, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'평촌동, 신탄진한일병원방면', lat:36.4366504, lng:127.4257701, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'평촌동, 신탄진한일병원방면', lat:36.4366504, lng:127.4257701, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'덕암동주민센터, 평촌동방면', lat:36.4366504, lng:127.4257701, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'덕암동주민센터, 평촌동방면', lat:36.4366504, lng:127.4257701, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'신탄진행정복지센터, 신탄진시장방면', lat:36.4517797, lng:127.4304022, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'신탄진행정복지센터, 신탄진시장방면', lat:36.4517797, lng:127.4304022, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대전이문고, 덕암동방면', lat:36.4455445, lng:127.4235531, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대전이문고, 덕암동방면', lat:36.4455445, lng:127.4235531, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'덕암동, 보건소방면', lat:36.4455445, lng:127.4235531, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'덕암동, 보건소방면', lat:36.4455445, lng:127.4235531, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'신탄중앙중학교, 대덕구보건소방면', lat:36.4412383, lng:127.4246044, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'신탄중앙중학교, 대덕구보건소방면', lat:36.4412383, lng:127.4246044, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'한국타이어, 목상동주민센터방면', lat:36.4448237, lng:127.4163255, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'한국타이어, 목상동주민센터방면', lat:36.4448237, lng:127.4163255, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'목상동주민센터,한국교통안전공단방면 ', lat:36.4482768, lng:127.4131988, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'목상동주민센터,한국교통안전공단방면 ', lat:36.4482768, lng:127.4131988, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대덕경찰서방면한국타이어후문방면', lat:36.4486073, lng:127.4108218, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'대덕경찰서방면한국타이어후문방면', lat:36.4486073, lng:127.4108218, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'효성신탄진공장, 한국교통안전공단방면', lat:36.4424035, lng:127.4008729, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'효성신탄진공장, 한국교통안전공단방면', lat:36.4424035, lng:127.4008729, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'선바위, 들말/신대차고지방면', lat:36.4242461, lng:127.4194246, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'선바위, 들말/신대차고지방면', lat:36.4242461, lng:127.4194246, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'상서삼거리, 선바위방면', lat:36.4299966, lng:127.421788, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'상서삼거리, 선바위방면', lat:36.4299966, lng:127.421788, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'평촌동, 신탄진한일병원방면', lat:36.4299966, lng:127.421788, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'평촌동, 신탄진한일병원방면', lat:36.4299966, lng:127.421788, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'상서삼거리, 신탄진한일병원방면', lat:36.430232, lng:127.4222944, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'상서삼거리, 신탄진한일병원방면', lat:36.430232, lng:127.4222944, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'신탄진시장, 금강엑슬루타워방면', lat:36.4505768, lng:127.4261929, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'신탄진시장, 금강엑슬루타워방면', lat:36.4505768, lng:127.4261929, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'신탄진시장, 신탄진역방면', lat:36.4505396, lng:127.42438, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'신탄진시장, 신탄진역방면', lat:36.4505396, lng:127.42438, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'신탄진역, 신탄진동행정복지센터방면', lat:36.4492428, lng:127.4294781, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'신탄진역, 신탄진동행정복지센터방면', lat:36.4492428, lng:127.4294781, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'새여울아파트, 용정초맞은편', lat:36.4526394, lng:127.4362921, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'새여울아파트, 용정초맞은편', lat:36.4526394, lng:127.4362921, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'신탄진역, 남경마을방면', lat:36.4498056, lng:127.4290926, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'신탄진역, 남경마을방면', lat:36.4498056, lng:127.4290926, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'남경마을, 덕암동주민센터방면', lat:36.4498056, lng:127.4290926, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'남경마을, 덕암동주민센터방면', lat:36.4498056, lng:127.4290926, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'신탄진고등학교, 석봉초등학교방면', lat:36.4506596, lng:127.4351857, type:'general', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'신탄진고등학교, 석봉초등학교방면', lat:36.4506596, lng:127.4351857, type:'recycle', note:'대덕구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로156 제일금거래소 앞 버스승강장', lat:36.3287813, lng:127.4268672, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로156 제일금거래소 앞 버스승강장', lat:36.3287813, lng:127.4268672, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 164 이안경원 앞 버스승강장', lat:36.3290862, lng:127.4276704, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 164 이안경원 앞 버스승강장', lat:36.3290862, lng:127.4276704, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 168 원더랜드 앞 버스승강장', lat:36.3292516, lng:127.4281614, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 168 원더랜드 앞 버스승강장', lat:36.3292516, lng:127.4281614, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대전천서로 445 더리터 은행점 건너편 횡단보도', lat:36.3285495, lng:127.4295605, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대전천서로 445 더리터 은행점 건너편 횡단보도', lat:36.3285495, lng:127.4295605, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 468 이안과 앞 버스승강장', lat:36.3275403, lng:127.4268211, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 468 이안과 앞 버스승강장', lat:36.3275403, lng:127.4268211, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 192-1 앞 버스승강장', lat:36.3199969, lng:127.4245672, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 192-1 앞 버스승강장', lat:36.3199969, lng:127.4245672, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대흥로 110 대전고등학교 앞 버스승강장', lat:36.3222122, lng:127.4246765, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대흥로 110 대전고등학교 앞 버스승강장', lat:36.3222122, lng:127.4246765, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 471 대흥동성당 앞 버스승강장', lat:36.3267693, lng:127.4264094, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 471 대흥동성당 앞 버스승강장', lat:36.3267693, lng:127.4264094, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 134-1 순남시래기 앞 버스승강장', lat:36.3279984, lng:127.424706, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 134-1 순남시래기 앞 버스승강장', lat:36.3279984, lng:127.424706, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 126 메가박스 앞 버스승강장', lat:36.3276499, lng:127.4241236, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 126 메가박스 앞 버스승강장', lat:36.3276499, lng:127.4241236, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 258 빽다방 앞 버스승강장', lat:36.3255734, lng:127.4223388, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 258 빽다방 앞 버스승강장', lat:36.3255734, lng:127.4223388, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 238 kt대전지점 앞 버스승강장', lat:36.3237325, lng:127.4232671, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 238 kt대전지점 앞 버스승강장', lat:36.3237325, lng:127.4232671, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 235 앞 버스승강장', lat:36.3236428, lng:127.4224302, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 235 앞 버스승강장', lat:36.3236428, lng:127.4224302, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 411 농협아나로마트 앞 버스승강장', lat:36.3219497, lng:127.4295433, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 411 농협아나로마트 앞 버스승강장', lat:36.3219497, lng:127.4295433, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 195 앞 버스승강장', lat:36.3201639, lng:127.4240533, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 195 앞 버스승강장', lat:36.3201639, lng:127.4240533, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대흥로 64 성모병원 응급실 앞', lat:36.3232247, lng:127.4202437, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대흥로 64 성모병원 응급실 앞', lat:36.3232247, lng:127.4202437, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 76 하나은행 앞', lat:36.3249155, lng:127.4201602, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 76 하나은행 앞', lat:36.3249155, lng:127.4201602, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 100 중구청 후문 버스승강장', lat:36.3254838, lng:127.4213793, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 100 중구청 후문 버스승강장', lat:36.3254838, lng:127.4213793, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 373 한밭운동장 앞 승강장', lat:36.3163364, lng:127.4306331, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 373 한밭운동장 앞 승강장', lat:36.3163364, lng:127.4306331, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 92 앞 승강장', lat:36.3137068, lng:127.4308921, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 92 앞 승강장', lat:36.3137068, lng:127.4308921, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'충무로 69-1 테미고개 승강장', lat:36.3174058, lng:127.42526, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'충무로 69-1 테미고개 승강장', lat:36.3174058, lng:127.42526, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대사동 99-23 공영주차장 앞 승강장', lat:36.3168726, lng:127.4249462, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대사동 99-23 공영주차장 앞 승강장', lat:36.3168726, lng:127.4249462, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대사동 197 보문산 내 공영주차장 버스종점', lat:36.3117766, lng:127.4200288, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대사동 197 보문산 내 공영주차장 버스종점', lat:36.3117766, lng:127.4200288, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 297 금산인삼도매시장 앞 버스승강장', lat:36.3124984, lng:127.4355083, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 297 금산인삼도매시장 앞 버스승강장', lat:36.3124984, lng:127.4355083, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 301-1 앞 횡단보도', lat:36.3128044, lng:127.4350475, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 301-1 앞 횡단보도', lat:36.3128044, lng:127.4350475, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 17 건영페인트 앞 횡단보도', lat:36.3144568, lng:127.4387154, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 17 건영페인트 앞 횡단보도', lat:36.3144568, lng:127.4387154, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 45 앞 버스승강장', lat:36.3133503, lng:127.4360072, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 45 앞 버스승강장', lat:36.3133503, lng:127.4360072, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 290 앞 택시승강장', lat:36.3125692, lng:127.4366489, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 290 앞 택시승강장', lat:36.3125692, lng:127.4366489, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 227 앞 버스승강장', lat:36.3092903, lng:127.4420401, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 227 앞 버스승강장', lat:36.3092903, lng:127.4420401, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 143 앞 버스승강장', lat:36.3047286, lng:127.4490372, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 143 앞 버스승강장', lat:36.3047286, lng:127.4490372, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 130 앞 버스승강장', lat:36.3039036, lng:127.4506454, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 130 앞 버스승강장', lat:36.3039036, lng:127.4506454, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 66 솔빛아파트 앞 버스승강장', lat:36.2992846, lng:127.454744, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 66 솔빛아파트 앞 버스승강장', lat:36.2992846, lng:127.454744, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 139 롯데리아 앞', lat:36.328625, lng:127.425016, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 139 롯데리아 앞', lat:36.328625, lng:127.425016, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 119 국민연금공단 앞 승강장', lat:36.3279836, lng:127.4228337, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 119 국민연금공단 앞 승강장', lat:36.3279836, lng:127.4228337, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 320-1 성진빌딩 앞 승강장', lat:36.3308534, lng:127.4196903, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 320-1 성진빌딩 앞 승강장', lat:36.3308534, lng:127.4196903, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 293 LSI정보기술 앞 승강장', lat:36.3322384, lng:127.4157162, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'보문로 293 LSI정보기술 앞 승강장', lat:36.3322384, lng:127.4157162, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 63 앞 승강장', lat:36.3244044, lng:127.4187554, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 63 앞 승강장', lat:36.3244044, lng:127.4187554, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 523 대전웨딩박람회장 앞 승강장', lat:36.3301793, lng:127.4235705, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 523 대전웨딩박람회장 앞 승강장', lat:36.3301793, lng:127.4235705, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 135 파리바게트 앞', lat:36.3284689, lng:127.4247058, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 135 파리바게트 앞', lat:36.3284689, lng:127.4247058, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 606 신발나라 앞 승강장', lat:36.3357423, lng:127.4174669, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 606 신발나라 앞 승강장', lat:36.3357423, lng:127.4174669, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 167 나이키 앞 승강장', lat:36.3296634, lng:127.4278975, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 167 나이키 앞 승강장', lat:36.3296634, lng:127.4278975, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 153 대전중앙약국 앞 승강장', lat:36.3291392, lng:127.4264702, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로 153 대전중앙약국 앞 승강장', lat:36.3291392, lng:127.4264702, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 698 원플라워 앞 승강장', lat:36.3415988, lng:127.4100399, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 698 원플라워 앞 승강장', lat:36.3415988, lng:127.4100399, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 660 앞 승강장', lat:36.33919, lng:127.4131433, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 660 앞 승강장', lat:36.33919, lng:127.4131433, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중촌동 102-3 종촌동 솔밭공원 앞 승강장', lat:36.3386494, lng:127.4129426, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중촌동 102-3 종촌동 솔밭공원 앞 승강장', lat:36.3386494, lng:127.4129426, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 701 시영아파트 상가 앞 승강장', lat:36.3411916, lng:127.4090117, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대종로 701 시영아파트 상가 앞 승강장', lat:36.3411916, lng:127.4090117, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'목중로 29 대전선병원 앞 택시승강장', lat:36.3359973, lng:127.4101482, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'목중로 29 대전선병원 앞 택시승강장', lat:36.3359973, lng:127.4101482, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'목동로 37 목양마을아파트 정문 앞 승강장', lat:36.3347011, lng:127.4056219, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'목동로 37 목양마을아파트 정문 앞 승강장', lat:36.3347011, lng:127.4056219, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'동서대로 1399-2 순풍한의원 앞 승강장', lat:36.3337784, lng:127.4120436, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'동서대로 1399-2 순풍한의원 앞 승강장', lat:36.3337784, lng:127.4120436, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'동서대로 1388 금호한사랑아파트 정문 앞 승강장', lat:36.3316823, lng:127.4126943, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'동서대로 1388 금호한사랑아파트 정문 앞 승강장', lat:36.3316823, lng:127.4126943, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'태평로 71 삼부프라자 앞 승강장', lat:36.3232761, lng:127.3933497, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'태평로 71 삼부프라자 앞 승강장', lat:36.3232761, lng:127.3933497, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'태평로 80 삼부1단지아파트 앞 승강장', lat:36.3224721, lng:127.3939699, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'태평로 80 삼부1단지아파트 앞 승강장', lat:36.3224721, lng:127.3939699, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'태평로 15 버드내아파트 101동 앞 승강장', lat:36.3170039, lng:127.3881957, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'태평로 15 버드내아파트 101동 앞 승강장', lat:36.3170039, lng:127.3881957, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'평촌로 93 쌍용예가아파트 109동 옆 승강장', lat:36.3234709, lng:127.3969725, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'평촌로 93 쌍용예가아파트 109동 옆 승강장', lat:36.3234709, lng:127.3969725, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'수침로 138 유등마을아파트 112동 옆 승강장', lat:36.3318165, lng:127.3988748, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'수침로 138 유등마을아파트 112동 옆 승강장', lat:36.3318165, lng:127.3988748, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'수침로 101 앞 버스승강장', lat:36.328449, lng:127.3988377, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'수침로 101 앞 버스승강장', lat:36.328449, lng:127.3988377, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'수침로 102 앞 버스승강장', lat:36.3284156, lng:127.3993018, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'수침로 102 앞 버스승강장', lat:36.3284156, lng:127.3993018, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'문화로 115-2 유등지구대 앞 승강장', lat:36.3127923, lng:127.3984402, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'문화로 115-2 유등지구대 앞 승강장', lat:36.3127923, lng:127.3984402, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계백로 1588 다섯가지한의원 앞 승강장', lat:36.3179025, lng:127.3965688, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계백로 1588 다섯가지한의원 앞 승강장', lat:36.3179025, lng:127.3965688, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'태평로 22-1 빽다방 앞 승강장', lat:36.3188513, lng:127.3923876, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'태평로 22-1 빽다방 앞 승강장', lat:36.3188513, lng:127.3923876, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'용두동 14-5 란짬뽕 건너편', lat:36.322921, lng:127.4138286, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'용두동 14-5 란짬뽕 건너편', lat:36.322921, lng:127.4138286, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 865 앞 승강장', lat:36.3242262, lng:127.4109377, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 865 앞 승강장', lat:36.3242262, lng:127.4109377, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'선화로 12-1 앞 승강장', lat:36.3250233, lng:127.4111655, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'선화로 12-1 앞 승강장', lat:36.3250233, lng:127.4111655, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'동서대로 1330 앞 승강장', lat:36.3289193, lng:127.4071255, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'동서대로 1330 앞 승강장', lat:36.3289193, lng:127.4071255, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'동서대로 1329 로뎀노인복지센터 앞 승강장', lat:36.3293647, lng:127.4069924, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'동서대로 1329 로뎀노인복지센터 앞 승강장', lat:36.3293647, lng:127.4069924, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 775 코스모스악기빌딩 앞 승강장', lat:36.329942, lng:127.4038479, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 775 코스모스악기빌딩 앞 승강장', lat:36.329942, lng:127.4038479, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 766 앞 횡단보도', lat:36.3301969, lng:127.4026044, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 766 앞 횡단보도', lat:36.3301969, lng:127.4026044, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'동서대로 1299 앞 승강장', lat:36.3284387, lng:127.4038607, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'동서대로 1299 앞 승강장', lat:36.3284387, lng:127.4038607, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 800 오룡역 1번출구 앞', lat:36.3278811, lng:127.4053049, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 800 오룡역 1번출구 앞', lat:36.3278811, lng:127.4053049, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 814 복록수 앞 승강장', lat:36.3272544, lng:127.4060996, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 814 복록수 앞 승강장', lat:36.3272544, lng:127.4060996, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 832 농협하나로마트 앞 승강장', lat:36.3259179, lng:127.4077736, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 832 농협하나로마트 앞 승강장', lat:36.3259179, lng:127.4077736, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 846 오류삼성아파트 앞 정문 입구', lat:36.3250154, lng:127.4088838, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 846 오류삼성아파트 앞 정문 입구', lat:36.3250154, lng:127.4088838, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계백로 1719 센트리아오피스텔 앞 승강장', lat:36.3222656, lng:127.4104278, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계백로 1719 센트리아오피스텔 앞 승강장', lat:36.3222656, lng:127.4104278, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계백로 1685 앞 승강장', lat:36.3210524, lng:127.4068506, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계백로 1685 앞 승강장', lat:36.3210524, lng:127.4068506, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'오류로 19 서대전역 주차장 입구 옆 횡단보도', lat:36.3221242, lng:127.4046997, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'오류로 19 서대전역 주차장 입구 옆 횡단보도', lat:36.3221242, lng:127.4046997, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'문화로 132-1 앞 승강장', lat:36.3128183, lng:127.4002009, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'문화로 132-1 앞 승강장', lat:36.3128183, lng:127.4002009, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'유등천동로 346 서남부터미널 앞 승강장', lat:36.3125633, lng:127.3882436, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'유등천동로 346 서남부터미널 앞 승강장', lat:36.3125633, lng:127.3882436, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'유등천동로 370 강변빌라 앞 승강장', lat:36.3149864, lng:127.3874821, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'유등천동로 370 강변빌라 앞 승강장', lat:36.3149864, lng:127.3874821, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대둔산로 411 앞 승강장', lat:36.3061422, lng:127.3865261, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대둔산로 411 앞 승강장', lat:36.3061422, lng:127.3865261, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대둔산로 380 앞 승강장', lat:36.3032891, lng:127.3864269, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대둔산로 380 앞 승강장', lat:36.3032891, lng:127.3864269, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대둔산로 320 앞 승강장', lat:36.2978719, lng:127.3850422, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대둔산로 320 앞 승강장', lat:36.2978719, lng:127.3850422, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'사정동 633 오월드버드랜드 앞 승강장', lat:36.292646, lng:127.3979122, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'사정동 633 오월드버드랜드 앞 승강장', lat:36.292646, lng:127.3979122, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대둔산로 184번길 8 앞 승강장', lat:36.2866435, lng:127.3786505, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대둔산로 184번길 8 앞 승강장', lat:36.2866435, lng:127.3786505, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대둔산로 130 충전소 앞 승강장', lat:36.2828457, lng:127.3764521, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'대둔산로 130 충전소 앞 승강장', lat:36.2828457, lng:127.3764521, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'안영동 166-9 검바위마을 입구 앞 승강장', lat:36.2739125, lng:127.3772774, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'안영동 166-9 검바위마을 입구 앞 승강장', lat:36.2739125, lng:127.3772774, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'산성로 63 중구보건소 앞 승강장', lat:36.3081332, lng:127.3952729, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'산성로 63 중구보건소 앞 승강장', lat:36.3081332, lng:127.3952729, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'문화로 175 앞 승강장', lat:36.3146322, lng:127.4046135, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'문화로 175 앞 승강장', lat:36.3146322, lng:127.4046135, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'문화로 178 앞 승강장', lat:36.314323, lng:127.4049954, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'문화로 178 앞 승강장', lat:36.314323, lng:127.4049954, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'문화로 214 앞 승강장', lat:36.3156602, lng:127.4087224, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'문화로 214 앞 승강장', lat:36.3156602, lng:127.4087224, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'문화로 266 충남대학교병원 응급실 앞 승강장', lat:36.316717, lng:127.4139997, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'문화로 266 충남대학교병원 응급실 앞 승강장', lat:36.316717, lng:127.4139997, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'문화로 269 앞 승강장', lat:36.3180734, lng:127.4140096, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'문화로 269 앞 승강장', lat:36.3180734, lng:127.4140096, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'서문로 96 센트럴파크2단지 앞 승강장', lat:36.3171959, lng:127.4094206, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'서문로 96 센트럴파크2단지 앞 승강장', lat:36.3171959, lng:127.4094206, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 910 KT문화빌딩 앞 승강장', lat:36.3209677, lng:127.4135336, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 910 KT문화빌딩 앞 승강장', lat:36.3209677, lng:127.4135336, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로16번길 5 대전병무청 앞 승강장', lat:36.3223947, lng:127.4147181, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'중앙로16번길 5 대전병무청 앞 승강장', lat:36.3223947, lng:127.4147181, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 911 투썸플레이스 앞', lat:36.3210733, lng:127.4145597, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계룡로 911 투썸플레이스 앞', lat:36.3210733, lng:127.4145597, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계백로 1712 기독교연합봉사회관 앞 승강장', lat:36.32108, lng:127.4098096, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계백로 1712 기독교연합봉사회관 앞 승강장', lat:36.32108, lng:127.4098096, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계백로 1686번길 16 한신아파트 101동 앞 승강장', lat:36.3156421, lng:127.4088825, type:'general', note:'중구청 관리 버스정류장 쓰레기통'},
+    {name:'계백로 1686번길 16 한신아파트 101동 앞 승강장', lat:36.3156421, lng:127.4088825, type:'recycle', note:'중구청 관리 버스정류장 쓰레기통'},
+    // 출처: 대전광역시 서구청 오픈API "공공쓰레기통 현황정보" (종류 미상 - 일반 처리)
+    // 출처: 공공데이터포털 "대전광역시 동구_가로휴지통현황" (종류별로 분리 등록)
+    {name:'동대전로 319 - 중앙택시', lat:36.3489023, lng:127.4431228, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 319 - 중앙택시', lat:36.3489023, lng:127.4431228, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 319 - 중앙택시', lat:36.3489023, lng:127.4431228, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'합내로 75 - 더치나인', lat:36.3498507, lng:127.4398253, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'합내로 75 - 더치나인', lat:36.3498507, lng:127.4398253, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'합내로 75 - 더치나인', lat:36.3498507, lng:127.4398253, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 355 건너편 - 택시회사', lat:36.3507162, lng:127.4521006, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 355 건너편 - 택시회사', lat:36.3507162, lng:127.4521006, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 355 건너편 - 택시회사', lat:36.3507162, lng:127.4521006, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 328 - 연세의원', lat:36.3482478, lng:127.4513416, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 328 - 연세의원', lat:36.3482478, lng:127.4513416, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 328 - 연세의원', lat:36.3482478, lng:127.4513416, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 240 - 가양치과', lat:36.3438534, lng:127.4432245, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 240 - 가양치과', lat:36.3438534, lng:127.4432245, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 240 - 가양치과', lat:36.3438534, lng:127.4432245, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 279 - 구기산업건설', lat:36.3461024, lng:127.446637, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 279 - 구기산업건설', lat:36.3461024, lng:127.446637, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 279 - 구기산업건설', lat:36.3461024, lng:127.446637, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 286 - 행복누리', lat:36.3459539, lng:127.4474142, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 286 - 행복누리', lat:36.3459539, lng:127.4474142, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 286 - 행복누리', lat:36.3459539, lng:127.4474142, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 263 - 그래그래피자', lat:36.3445194, lng:127.4462762, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 263 - 그래그래피자', lat:36.3445194, lng:127.4462762, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 263 - 그래그래피자', lat:36.3445194, lng:127.4462762, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 284 - 연합의원', lat:36.3464484, lng:127.4454215, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 284 - 연합의원', lat:36.3464484, lng:127.4454215, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 284 - 연합의원', lat:36.3464484, lng:127.4454215, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 287 - 고고성자원', lat:36.3463347, lng:127.4447119, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 287 - 고고성자원', lat:36.3463347, lng:127.4447119, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 287 - 고고성자원', lat:36.3463347, lng:127.4447119, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 316 - 석갈비집', lat:36.3489532, lng:127.4439501, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 316 - 석갈비집', lat:36.3489532, lng:127.4439501, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 316 - 석갈비집', lat:36.3489532, lng:127.4439501, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 353 - 왕손족발', lat:36.3506248, lng:127.4520338, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 353 - 왕손족발', lat:36.3506248, lng:127.4520338, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 353 - 왕손족발', lat:36.3506248, lng:127.4520338, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 325-1 - 또먹어도돼지', lat:36.3483126, lng:127.4507484, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 325-1 - 또먹어도돼지', lat:36.3483126, lng:127.4507484, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 325-1 - 또먹어도돼지', lat:36.3483126, lng:127.4507484, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'충정로 136 - 대주파크빌 103동 앞', lat:36.3432669, lng:127.4484424, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'충정로 136 - 대주파크빌 103동 앞', lat:36.3432669, lng:127.4484424, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'충정로 136 - 대주파크빌 103동 앞', lat:36.3432669, lng:127.4484424, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 420 - 또또손세차', lat:36.3040978, lng:127.4543395, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 420 - 또또손세차', lat:36.3040978, lng:127.4543395, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 486 - 명신주택', lat:36.3089721, lng:127.4502088, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 486 - 명신주택', lat:36.3089721, lng:127.4502088, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 473 - 명성부동산', lat:36.3079565, lng:127.4506061, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 473 - 명성부동산', lat:36.3079565, lng:127.4506061, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'은어송로 47 - 공인중개사', lat:36.3058062, lng:127.4548203, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'은어송로 47 - 공인중개사', lat:36.3058062, lng:127.4548203, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'은어송로 48 - 새마을금고', lat:36.3055118, lng:127.455156, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'은어송로 48 - 새마을금고', lat:36.3055118, lng:127.455156, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'동구청로 67 - 풍림아이원 정문', lat:36.3055118, lng:127.455156, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동구청로 67 - 풍림아이원 정문', lat:36.3055118, lng:127.455156, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'동구청로 147 - 동구청 정문', lat:36.3118764, lng:127.4548285, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동구청로 147 - 동구청 정문', lat:36.3118764, lng:127.4548285, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'은어송로 46 - 엔제리너스커피', lat:36.3053697, lng:127.4549579, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'은어송로 46 - 엔제리너스커피', lat:36.3053697, lng:127.4549579, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'계족로 148 - 아리따움', lat:36.327361, lng:127.4444209, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'계족로 148 - 아리따움', lat:36.327361, lng:127.4444209, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 130-2 - 베트남식당', lat:36.3337407, lng:127.4458346, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 130-2 - 베트남식당', lat:36.3337407, lng:127.4458346, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 130-2 - 베트남식당', lat:36.3337407, lng:127.4458346, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 59-1 - 정형외과', lat:36.3290395, lng:127.4412172, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 59-1 - 정형외과', lat:36.3290395, lng:127.4412172, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 59-1 - 정형외과', lat:36.3290395, lng:127.4412172, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'계족로 137 - 새들뫼 휴먼시아 108동', lat:36.3274598, lng:127.4421344, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'계족로 137 - 새들뫼 휴먼시아 108동', lat:36.3274598, lng:127.4421344, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'계족로 137 - 새들뫼 휴먼시아 108동', lat:36.3274598, lng:127.4421344, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 99 - 뮤흐뮤흐', lat:36.3312794, lng:127.4438976, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 99 - 뮤흐뮤흐', lat:36.3312794, lng:127.4438976, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 88-2 - 세븐일레븐', lat:36.3302654, lng:127.4438245, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 88-2 - 세븐일레븐', lat:36.3302654, lng:127.4438245, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 248 - 복권편의점', lat:36.2904053, lng:127.4633534, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 248 - 복권편의점', lat:36.2904053, lng:127.4633534, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 874 - 중앙민속 예술학원', lat:36.3369977, lng:127.4304598, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 874 - 중앙민속 예술학원', lat:36.3369977, lng:127.4304598, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 74 - 명창재단 지업사', lat:36.3366332, lng:127.4268166, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 74 - 명창재단 지업사', lat:36.3366332, lng:127.4268166, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'솔랑길 12 - 삼성빌라 맞은편', lat:36.3394493, lng:127.4251646, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'솔랑길 12 - 삼성빌라 맞은편', lat:36.3394493, lng:127.4251646, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 73-1 - 기전케이블', lat:36.3394493, lng:127.4251646, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 73-1 - 기전케이블', lat:36.3394493, lng:127.4251646, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 896 - 감골오리', lat:36.3394493, lng:127.4251646, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 896 - 감골오리', lat:36.3394493, lng:127.4251646, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'동서대로 1498-1 - 영진카서비스', lat:36.3394493, lng:127.4251646, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동서대로 1498-1 - 영진카서비스', lat:36.3394493, lng:127.4251646, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'동서대로1503번길 3 - 시은펫', lat:36.3401637, lng:127.4201547, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동서대로1503번길 3 - 시은펫', lat:36.3401637, lng:127.4201547, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 935 - 한밭자이아파트 정문', lat:36.3394493, lng:127.4251646, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 935 - 한밭자이아파트 정문', lat:36.3394493, lng:127.4251646, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 159 - 부모사랑 요양병원', lat:36.3406059, lng:127.4350372, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 159 - 부모사랑 요양병원', lat:36.3406059, lng:127.4350372, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'우암로 159 - 부모사랑 요양병원', lat:36.3406059, lng:127.4350372, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'동서대로 1688 - 빅플러스타워', lat:36.3488654, lng:127.4373886, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동서대로 1688 - 빅플러스타워', lat:36.3488654, lng:127.4373886, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동서대로 1688 - 빅플러스타워', lat:36.3488654, lng:127.4373886, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'계족로 276 - 천안골동품', lat:36.3375066, lng:127.4384845, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'계족로 276 - 천안골동품', lat:36.3375066, lng:127.4384845, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'계족로 276 - 천안골동품', lat:36.3375066, lng:127.4384845, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'계족로 123 - 충남중학교 버스터미널', lat:36.3247987, lng:127.4440678, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'옥천로 38 - 신흥마을 아파트 102동', lat:36.3203148, lng:127.4450073, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동서대로 1719 - 갑띠방', lat:36.3506069, lng:127.4389121, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동서대로 1719 - 갑띠방', lat:36.3506069, lng:127.4389121, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동서대로 1719 - 갑띠방', lat:36.3506069, lng:127.4389121, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'한밭대로 1269 - LG베스트샵', lat:36.3551736, lng:127.4380637, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'한밭대로 1269 - LG베스트샵', lat:36.3551736, lng:127.4380637, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'한밭대로 1269 - LG베스트샵', lat:36.3551736, lng:127.4380637, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'동서대로 1673-1 - 아로마플라워', lat:36.3490731, lng:127.4355964, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동서대로 1673-1 - 아로마플라워', lat:36.3490731, lng:127.4355964, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동서대로 1673-1 - 아로마플라워', lat:36.3490731, lng:127.4355964, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'한밭대로 1231 - 글로벌자동차유리', lat:36.3576403, lng:127.4347451, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'한밭대로 1231 - 글로벌자동차유리', lat:36.3576403, lng:127.4347451, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'한밭대로 1231 - 글로벌자동차유리', lat:36.3576403, lng:127.4347451, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'한밭대로 1291 - 아우벤 대전점', lat:36.3536763, lng:127.4394541, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'한밭대로 1291 - 아우벤 대전점', lat:36.3536763, lng:127.4394541, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'한밭대로 1291 - 아우벤 대전점', lat:36.3536763, lng:127.4394541, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'한밭대로 1232 - 도디치 대전점', lat:36.3571166, lng:127.434259, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'한밭대로 1232 - 도디치 대전점', lat:36.3571166, lng:127.434259, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'한밭대로 1232 - 도디치 대전점', lat:36.3571166, lng:127.434259, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'한밭대로 1266 - 기아자동차', lat:36.35499, lng:127.4367956, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'한밭대로 1266 - 기아자동차', lat:36.35499, lng:127.4367956, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'한밭대로 1266 - 기아자동차', lat:36.35499, lng:127.4367956, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 771 - 주앙스파찜질방', lat:36.3285416, lng:127.4337604, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 771 - 주앙스파찜질방', lat:36.3285416, lng:127.4337604, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 135 - 파리바게뜨', lat:36.3342577, lng:127.4456632, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'동대전로 135 - 파리바게뜨', lat:36.3342577, lng:127.4456632, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 823 - 한송헤어샵', lat:36.3327723, lng:127.4316703, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 823 - 한송헤어샵', lat:36.3327723, lng:127.4316703, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 823 - 한송헤어샵', lat:36.3327723, lng:127.4316703, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 829 - 더블유에스 제이점', lat:36.3332961, lng:127.4313743, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 829 - 더블유에스 제이점', lat:36.3332961, lng:127.4313743, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 829 - 더블유에스 제이점', lat:36.3332961, lng:127.4313743, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'중앙로 185 - 우리은행', lat:36.3303949, lng:127.4297479, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'중앙로 185 - 우리은행', lat:36.3303949, lng:127.4297479, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'중앙로 185 - 우리은행', lat:36.3303949, lng:127.4297479, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'중앙로193번길 4 - 장준서아카데미', lat:36.3307243, lng:127.4307411, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'중앙로193번길 4 - 장준서아카데미', lat:36.3307243, lng:127.4307411, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'중앙로 206 - 다온제이', lat:36.3307538, lng:127.4319021, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'중앙로 206 - 다온제이', lat:36.3307538, lng:127.4319021, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 577 - 청원종합장식', lat:36.3123213, lng:127.4415735, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 577 - 청원종합장식', lat:36.3123213, lng:127.4415735, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 580 - 가가가 노래방기계대여', lat:36.3128147, lng:127.4417247, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 580 - 가가가 노래방기계대여', lat:36.3128147, lng:127.4417247, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 509 - 한국토지주택 충남본부', lat:36.3105087, lng:127.4483539, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 509 - 한국토지주택 충남본부', lat:36.3105087, lng:127.4483539, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 502 - 카로드', lat:36.3101433, lng:127.4492424, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 502 - 카로드', lat:36.3101433, lng:127.4492424, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'판암로 15 - 태영막창 앞', lat:36.3178498, lng:127.4617729, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'판암로 15 - 태영막창 앞', lat:36.3178498, lng:127.4617729, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 1012 - 친환경페인트', lat:36.3459269, lng:127.4192633, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 1012 - 친환경페인트', lat:36.3459269, lng:127.4192633, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 1012 - 친환경페인트', lat:36.3459269, lng:127.4192633, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'계족로 42-2 - 공터', lat:36.3190318, lng:127.4425263, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'계족로 42-2 - 공터', lat:36.3190318, lng:127.4425263, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 621-1 - 예성지갑', lat:36.3161074, lng:127.4398649, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 621-1 - 예성지갑', lat:36.3161074, lng:127.4398649, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 646 - 효동현대아파트 106동 앞', lat:36.3180673, lng:127.4408554, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 646 - 효동현대아파트 106동 앞', lat:36.3180673, lng:127.4408554, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'계족로140번길 162 - 명문건설환경', lat:36.327903, lng:127.4532309, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'계족로140번길 162 - 명문건설환경', lat:36.327903, lng:127.4532309, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대학로 91 - 고향촌칼국수', lat:36.3379176, lng:127.4571884, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대학로 91 - 고향촌칼국수', lat:36.3379176, lng:127.4571884, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대학로 62-67 - 스마트빌', lat:36.3379636, lng:127.457703, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대학로 62-67 - 스마트빌', lat:36.3379636, lng:127.457703, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대학로 43 - 전화위복', lat:36.3339359, lng:127.4554801, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대학로 43 - 전화위복', lat:36.3339359, lng:127.4554801, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대학로 62-67 - 스마트빌', lat:36.3379636, lng:127.457703, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대학로 62-67 - 스마트빌', lat:36.3379636, lng:127.457703, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'용운로 89 - 씨케이건설', lat:36.3275559, lng:127.4524264, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'용운로 89 - 씨케이건설', lat:36.3275559, lng:127.4524264, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'산내로 1280-1 - 원메밀막국수', lat:36.2847073, lng:127.4821709, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'산내로 1280-1 - 원메밀막국수', lat:36.2847073, lng:127.4821709, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 706 - 인동 참좋은아파트 앞', lat:36.3233816, lng:127.4373937, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'대전로 706 - 인동 참좋은아파트 앞', lat:36.3233816, lng:127.4373937, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'계족로 65 - 동부경찰서 근처', lat:36.3212641, lng:127.4423085, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'계족로 65 - 동부경찰서 근처', lat:36.3212641, lng:127.4423085, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'신흥동 97-23 - 한가족노인요양원 부근', lat:36.32108, lng:127.443816, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'신흥동 97-23 - 한가족노인요양원 부근', lat:36.32108, lng:127.443816, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'옥천로 38 - 한가족노인요양원 건너편', lat:36.3203148, lng:127.4450073, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'옥천로 38 - 한가족노인요양원 건너편', lat:36.3203148, lng:127.4450073, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'신흥동 202-4 - 제2치수교방면 신흥마을아파트정류장', lat:36.3212111, lng:127.4459467, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'신흥동 202-4 - 제2치수교방면 신흥마을아파트정류장', lat:36.3212111, lng:127.4459467, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'계족로 88 - 신흥동김치찌개 앞', lat:36.3221338, lng:127.4450993, type:'general', note:'동구청 관리 가로휴지통'},
+    {name:'계족로 88 - 신흥동김치찌개 앞', lat:36.3221338, lng:127.4450993, type:'recycle', note:'동구청 관리 가로휴지통'},
+    {name:'대전광역시 서구 둔산서로105', lat:36.3539864, lng:127.3827309, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 괴정동135-2', lat:36.3384852, lng:127.3754881, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 용문동256-31', lat:36.3369566, lng:127.3944941, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 용문동259-1', lat:36.3371003, lng:127.3920294, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 내동167(서우@201동 앞)', lat:36.3330719, lng:127.3722881, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 괴정동3-3', lat:36.3420661, lng:127.3868312, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 탄방동514-387', lat:36.3434095, lng:127.3808786, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 용문동 276-6(농협앞)', lat:36.3359872, lng:127.3897263, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 용문동594-6(승강장)', lat:36.3380988, lng:127.3924248, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 변동오거리(승강장)', lat:36.3286645, lng:127.3813814, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 가장동41-10', lat:36.3308848, lng:127.3854289, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 도마동25-5', lat:36.3229892, lng:127.3704858, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 가장동 래미안@201동앞(승강장)', lat:36.332921, lng:127.3831128, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 변동31-9(승강장)', lat:36.3266295, lng:127.3803437, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 변동61-21(승강장)', lat:36.3233108, lng:127.3780188, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 내동25-8', lat:36.3332289, lng:127.3736649, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 가장동 래미안@ 113동 앞', lat:36.332921, lng:127.3831128, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 가장동 래민안@ 116동 앞', lat:36.332921, lng:127.3831128, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 도마1동 210', lat:36.3194327, lng:127.3780209, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 갈마동 경성큰마을 정문', lat:36.3452207, lng:127.3749994, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 갈마동 1434', lat:36.3452207, lng:127.3749994, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 가장동 40-23', lat:36.3299421, lng:127.3849988, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 가장동 33-6', lat:36.3286359, lng:127.3873125, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 내동35-2(이한축산 앞)', lat:36.3362705, lng:127.3781027, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 괴정동 10-8', lat:36.3422799, lng:127.3840131, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 변동 15-11', lat:36.3297792, lng:127.3788339, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 월평동243', lat:36.361913, lng:127.3789325, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 월평동266-1', lat:36.360415, lng:127.3755035, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 월평동282-1', lat:36.3585924, lng:127.3786227, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 월평동222', lat:36.3634318, lng:127.3755185, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 월평동302', lat:36.3609467, lng:127.3717445, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 월평동300(무지개@승강장)', lat:36.3588726, lng:127.3754943, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 월평동301(무지개@승강장)', lat:36.3589076, lng:127.3713554, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 월평동310(서부소방서승강장)', lat:36.3603026, lng:127.3668831, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 월평동312-1(진달래@승강장)', lat:36.3590198, lng:127.3668811, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 월평동313(은뜰공원승강장)', lat:36.3595795, lng:127.3629129, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 월평동424(이마트옆승강장)', lat:36.3580272, lng:127.3610736, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 월평동951(월평육교승강장)', lat:36.354424, lng:127.3616514, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 월평동29-1(신도칼국수앞 승강장)', lat:36.3532218, lng:127.3611001, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 갈바동292-5', lat:36.3534014, lng:127.3677672, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 갈마동293-4', lat:36.3531015, lng:127.3682297, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 갈마동407(갈마@승강장)', lat:36.3426704, lng:127.3690863, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 갈마동397-1', lat:36.3456035, lng:127.3717881, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 갈마동361-4', lat:36.3469706, lng:127.369636, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 갈마동1129-2', lat:36.345959, lng:127.3744559, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 둔산동1036', lat:36.352343, lng:127.3785451, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 둔산동962(하이마트 앞 승강장)', lat:36.3554392, lng:127.378919, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 둔산동962(하이마트 옆 승강장)', lat:36.3554392, lng:127.378919, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 둔산동959-2', lat:36.3563498, lng:127.3781846, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 둔산동1110(계룡4가)', lat:36.3494177, lng:127.3768048, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 둔산동1043(현대생명앞승강장)', lat:36.3507511, lng:127.3775923, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 관저1동 대자연@정문', lat:36.3054116, lng:127.3382258, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 관저1동 대자연@후문', lat:36.3054116, lng:127.3382258, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 관저1동 건양대입구(건양프라자 앞)', lat:36.3069266, lng:127.3431559, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 관저2동 구봉마을 814동 앞', lat:36.2967413, lng:127.33039, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 관저2동 구봉마을 814동 옆', lat:36.2967413, lng:127.33039, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 관저2동 구봉마을 810동 앞', lat:36.2967413, lng:127.33039, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 관저2동 구봉마을 810동 옆', lat:36.2967413, lng:127.33039, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 관저2동 신선마을 201동(관저지하도 입구)', lat:36.2997858, lng:127.3325319, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 관저2동 1465', lat:36.2984001, lng:127.3403821, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 관저2동 1495', lat:36.2984109, lng:127.3407298, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    {name:'대전광역시 서구 가수원4거리-목원대입구도로', lat:36.3052757, lng:127.3505683, type:'general', note:'서구청 관리 공공 쓰레기통'},
+    // 출처: 공공데이터포털 "전국휴지통표준데이터" - 대전광역시 유성구_휴지통 (버스정류장 설치 쓰레기통)
+    {name:'원촌동 솔로몬 파크 버스정류장', lat:36.376771, lng:127.402904, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원촌동 솔로몬 파크 버스정류장', lat:36.376771, lng:127.402904, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'싸이언스빌 3가 버스정류장', lat:36.384832, lng:127.405441, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'싸이언스빌 3가 버스정류장', lat:36.384832, lng:127.405441, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'문지 삼거리 버스정류장', lat:36.377292, lng:127.404749, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'문지 삼거리 버스정류장', lat:36.377292, lng:127.404749, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'세종 아파트 버스정류장(전민동 394-16)', lat:36.399769, lng:127.403827, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'세종 아파트 버스정류장(전민동 394-16)', lat:36.399769, lng:127.403827, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'전민동 주민센터 버스정류장(523-4)', lat:36.399754, lng:127.400561, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'전민동 주민센터 버스정류장(523-4)', lat:36.399754, lng:127.400561, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'관평중학교 버스정류장(44-560)', lat:36.424048, lng:127.388777, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'관평중학교 버스정류장(44-560)', lat:36.424048, lng:127.388777, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'롯데마트 대덕점 버스정류장', lat:36.426653, lng:127.385358, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'롯데마트 대덕점 버스정류장', lat:36.426653, lng:127.385358, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'조폐공사 ID본부 버스정류장', lat:36.413548, lng:127.411603, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'조폐공사 ID본부 버스정류장', lat:36.413548, lng:127.411603, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'탑립동 대영정보시스템 뉴로스 버스정류장', lat:36.416345, lng:127.406623, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'탑립동 대영정보시스템 뉴로스 버스정류장', lat:36.416345, lng:127.406623, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'탑립동 대덕밸리 용신교 버스정류장', lat:36.425833, lng:127.402124, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'탑립동 대덕밸리 용신교 버스정류장', lat:36.425833, lng:127.402124, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'한들교 버스정류장', lat:36.428446, lng:127.398053, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'한들교 버스정류장', lat:36.428446, lng:127.398053, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'관평동 세원정공 버스정류장 우리ETI', lat:36.430313, lng:127.395657, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'관평동 세원정공 버스정류장 우리ETI', lat:36.430313, lng:127.395657, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'관평중학교 버스정류장(44-550)', lat:36.424076, lng:127.388517, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'관평중학교 버스정류장(44-550)', lat:36.424076, lng:127.388517, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'중일고등학교 버스정류장(44-570)', lat:36.421456, lng:127.388674, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'중일고등학교 버스정류장(44-570)', lat:36.421456, lng:127.388674, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'중일고등학교 버스정류장(44-580)', lat:36.421214, lng:127.388539, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'중일고등학교 버스정류장(44-580)', lat:36.421214, lng:127.388539, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'테크노밸리6단지 버스정류장', lat:36.418774, lng:127.387836, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'테크노밸리6단지 버스정류장', lat:36.418774, lng:127.387836, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'테크노밸리10단지 버스정류장', lat:36.420325, lng:127.392259, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'테크노밸리10단지 버스정류장', lat:36.420325, lng:127.392259, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'한신에스메카 버스정류장', lat:36.428107, lng:127.391129, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'한신에스메카 버스정류장', lat:36.428107, lng:127.391129, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'전민동 주민센터 버스정류장(905)', lat:36.399553, lng:127.399516, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'전민동 주민센터 버스정류장(905)', lat:36.399553, lng:127.399516, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'세종 아파트 버스정류장(전민동 394-16 #2)', lat:36.399534, lng:127.403753, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'세종 아파트 버스정류장(전민동 394-16 #2)', lat:36.399534, lng:127.403753, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'도안6단지센트럴시티 버스정류장', lat:36.348297, lng:127.342096, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'도안6단지센트럴시티 버스정류장', lat:36.348297, lng:127.342096, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'휴먼시아4단지 버스정류장', lat:36.347221, lng:127.340085, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'휴먼시아4단지 버스정류장', lat:36.347221, lng:127.340085, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'진잠타운 아파트 버스정류장', lat:36.295726, lng:127.321283, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'진잠타운 아파트 버스정류장', lat:36.295726, lng:127.321283, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'한아름 아파트 버스정류장', lat:36.295851, lng:127.319563, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'한아름 아파트 버스정류장', lat:36.295851, lng:127.319563, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'서대전 IC 버스정류장', lat:36.293648, lng:127.319419, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'서대전 IC 버스정류장', lat:36.293648, lng:127.319419, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'제이파크(아) 버스정류장', lat:36.303999, lng:127.319446, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'제이파크(아) 버스정류장', lat:36.303999, lng:127.319446, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'샘물타운 버스정류장', lat:36.299769, lng:127.322048, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'샘물타운 버스정류장', lat:36.299769, lng:127.322048, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'교촌동 한승미메이드아파트 버스정류장', lat:36.306831, lng:127.319335, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'교촌동 한승미메이드아파트 버스정류장', lat:36.306831, lng:127.319335, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'드리움공원 버스정류장(45-300)', lat:36.315573, lng:127.319812, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'드리움공원 버스정류장(45-300)', lat:36.315573, lng:127.319812, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'드리움공원 버스정류장(45-310)', lat:36.315474, lng:127.320086, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'드리움공원 버스정류장(45-310)', lat:36.315474, lng:127.320086, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'드리움아파트(모다) 버스정류장(40-330)', lat:36.311666, lng:127.318471, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'드리움아파트(모다) 버스정류장(40-330)', lat:36.311666, lng:127.318471, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'드리움아파트(모다) 버스정류장(40-340)', lat:36.311975, lng:127.318404, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'드리움아파트(모다) 버스정류장(40-340)', lat:36.311975, lng:127.318404, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성구 보훈회관 버스정류장(41-580)', lat:36.351791, lng:127.331734, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성구 보훈회관 버스정류장(41-580)', lat:36.351791, lng:127.331734, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원불교유성교당 버스정류장', lat:36.351321, lng:127.332634, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원불교유성교당 버스정류장', lat:36.351321, lng:127.332634, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'한밭대학교 버스정류장', lat:36.351561, lng:127.297815, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'한밭대학교 버스정류장', lat:36.351561, lng:127.297815, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'현충원역 버스정류장(41-460)', lat:36.359542, lng:127.320103, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'현충원역 버스정류장(41-460)', lat:36.359542, lng:127.320103, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'현충원역 버스정류장(41-450)', lat:36.359269, lng:127.321804, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'현충원역 버스정류장(41-450)', lat:36.359269, lng:127.321804, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성구 보훈회관 버스정류장(41-590)', lat:36.351321, lng:127.332705, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성구 보훈회관 버스정류장(41-590)', lat:36.351321, lng:127.332705, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'구암역 버스정류장', lat:36.356021, lng:127.330929, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'구암역 버스정류장', lat:36.356021, lng:127.330929, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성시외버스터미널 건너편 버스정류장', lat:36.355791, lng:127.331172, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성시외버스터미널 건너편 버스정류장', lat:36.355791, lng:127.331172, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성홈플러스 택시대기소', lat:36.359355, lng:127.355045, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성홈플러스 택시대기소', lat:36.359355, lng:127.355045, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'신협연수원 버스정류장(41-750)', lat:36.358351, lng:127.303621, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'신협연수원 버스정류장(41-750)', lat:36.358351, lng:127.303621, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'신협연수원 버스정류장(41-740)', lat:36.358268, lng:127.304035, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'신협연수원 버스정류장(41-740)', lat:36.358268, lng:127.304035, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성온천역(2번 출구) 버스정류장', lat:36.352312, lng:127.341205, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성온천역(2번 출구) 버스정류장', lat:36.352312, lng:127.341205, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'홍인호텔(춘추사) 버스정류장', lat:36.358256, lng:127.343483, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'홍인호텔(춘추사) 버스정류장', lat:36.358256, lng:127.343483, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성온천역(3번출구) 버스정류장', lat:36.353257, lng:127.341083, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성온천역(3번출구) 버스정류장', lat:36.353257, lng:127.341083, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성온천역(6번 출구) 버스정류장', lat:36.354748, lng:127.341562, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성온천역(6번 출구) 버스정류장', lat:36.354748, lng:127.341562, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성온천역(7번 출구) 버스정류장', lat:36.354743, lng:127.342102, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성온천역(7번 출구) 버스정류장', lat:36.354743, lng:127.342102, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'만년교 버스정류장', lat:36.351961, lng:127.346802, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'만년교 버스정류장', lat:36.351961, lng:127.346802, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'만년교(띠울석갈비) 버스정류장', lat:36.352695, lng:127.345744, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'만년교(띠울석갈비) 버스정류장', lat:36.352695, lng:127.345744, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'리베라호텔(국민은행) 버스정류장', lat:36.354642, lng:127.338031, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'리베라호텔(국민은행) 버스정류장', lat:36.354642, lng:127.338031, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'도안마을1단지 버스정류장', lat:36.348696, lng:127.341772, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'도안마을1단지 버스정류장', lat:36.348696, lng:127.341772, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'트리플시티 9단지 버스정류장', lat:36.341489, lng:127.338104, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'트리플시티 9단지 버스정류장', lat:36.341489, lng:127.338104, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'목원대네거리 버스정류장', lat:36.332453, lng:127.339349, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'목원대네거리 버스정류장', lat:36.332453, lng:127.339349, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원신흥동 휴먼시아10단지 버스정류장(45-520)', lat:36.338155, lng:127.341123, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원신흥동 휴먼시아10단지 버스정류장(45-520)', lat:36.338155, lng:127.341123, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원신흥동 휴먼시아10단지 버스정류장(45-510)', lat:36.338384, lng:127.338961, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원신흥동 휴먼시아10단지 버스정류장(45-510)', lat:36.338384, lng:127.338961, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원신흥동 흥도초등학교 버스정류장(41-810)', lat:36.333902, lng:127.338023, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원신흥동 흥도초등학교 버스정류장(41-810)', lat:36.333902, lng:127.338023, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원신흥동 흥도초등학교 버스정류장(41-800)', lat:36.334351, lng:127.338281, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원신흥동 흥도초등학교 버스정류장(41-800)', lat:36.334351, lng:127.338281, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원신흥동 어울림하트12단지 버스정류장', lat:36.332393, lng:127.313102, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원신흥동 어울림하트12단지 버스정류장', lat:36.332393, lng:127.313102, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'과학기술연합대학원 버스정류장', lat:36.384194, lng:127.367184, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'과학기술연합대학원 버스정류장', lat:36.384194, lng:127.367184, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'KT&G연구소 앞 버스정류장', lat:36.384142, lng:127.347149, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'KT&G연구소 앞 버스정류장', lat:36.384142, lng:127.347149, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'한화그룹종합연구소 버스정류장(장방주택쪽)', lat:36.385441, lng:127.352951, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'한화그룹종합연구소 버스정류장(장방주택쪽)', lat:36.385441, lng:127.352951, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'연구단지네거리 버스정류장', lat:36.385864, lng:127.377352, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'연구단지네거리 버스정류장', lat:36.385864, lng:127.377352, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'반석역(6번출구) 버스정류장', lat:36.391386, lng:127.315419, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'반석역(6번출구) 버스정류장', lat:36.391386, lng:127.315419, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'극동방송국 입구 버스정류장', lat:36.386484, lng:127.318452, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'극동방송국 입구 버스정류장', lat:36.386484, lng:127.318452, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'지족역 버스정류장→유성IC방향', lat:36.382329, lng:127.319466, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'지족역 버스정류장→유성IC방향', lat:36.382329, lng:127.319466, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'송림마을1단지 버스정류장→반석역 방향', lat:36.391441, lng:127.315481, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'송림마을1단지 버스정류장→반석역 방향', lat:36.391441, lng:127.315481, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'노은농수상도매시장 버스정류장(42-270)', lat:36.367091, lng:127.321462, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'노은농수상도매시장 버스정류장(42-270)', lat:36.367091, lng:127.321462, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'노은농수산도매시장 버스정류장(42-260)', lat:36.366467, lng:127.321791, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'노은농수산도매시장 버스정류장(42-260)', lat:36.366467, lng:127.321791, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'금호고속앞', lat:36.358777, lng:127.336215, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'금호고속앞', lat:36.358777, lng:127.336215, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'충남대학교입구(죽동방향) 버스정류장', lat:36.366422, lng:127.338706, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'충남대학교입구(죽동방향) 버스정류장', lat:36.366422, lng:127.338706, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'온천2동주민센터 버스정류장→충남대학교방향', lat:36.365406, lng:127.335747, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'온천2동주민센터 버스정류장→충남대학교방향', lat:36.365406, lng:127.335747, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'온천2동주민센터 버스정류장→죽동삼거리방향', lat:36.365147, lng:127.335141, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'온천2동주민센터 버스정류장→죽동삼거리방향', lat:36.365147, lng:127.335141, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'궁동네거리 버스정류장→충대후문방향', lat:36.370175, lng:127.340484, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'궁동네거리 버스정류장→충대후문방향', lat:36.370175, lng:127.340484, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'충남대학교 후문 버스정류장', lat:36.369342, lng:127.340159, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'충남대학교 후문 버스정류장', lat:36.369342, lng:127.340159, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'궁동 버스정류장', lat:36.360836, lng:127.349455, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'궁동 버스정류장', lat:36.360836, lng:127.349455, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성구청 버스정류장(42-770)', lat:36.361408, lng:127.356052, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성구청 버스정류장(42-770)', lat:36.361408, lng:127.356052, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'충남대학교 버스정류장(42-620)', lat:36.362615, lng:127.343686, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'충남대학교 버스정류장(42-620)', lat:36.362615, lng:127.343686, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'충남대학교 버스정류장(42-600)', lat:36.362202, lng:127.343492, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'충남대학교 버스정류장(42-600)', lat:36.362202, lng:127.343492, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성구청 버스정류장(42-760)', lat:36.361586, lng:127.357143, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성구청 버스정류장(42-760)', lat:36.361586, lng:127.357143, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'궁동 한빛아파트버스정류장', lat:36.362647, lng:127.358587, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'궁동 한빛아파트버스정류장', lat:36.362647, lng:127.358587, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'구성삼거리 버스정류장', lat:36.370458, lng:127.368716, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'구성삼거리 버스정류장', lat:36.370458, lng:127.368716, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'한국과학기술원 버스정류장', lat:36.365865, lng:127.325091, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'한국과학기술원 버스정류장', lat:36.365865, lng:127.325091, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성한진오피스텔 앞 버스정류장', lat:36.354617, lng:127.342115, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성한진오피스텔 앞 버스정류장', lat:36.354617, lng:127.342115, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성고교 버스정류장', lat:36.350826, lng:127.335589, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'유성고교 버스정류장', lat:36.350826, lng:127.335589, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'전민중학교 버스정류장', lat:36.400584, lng:127.405049, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'전민중학교 버스정류장', lat:36.400584, lng:127.405049, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'엑스포아파트 버스정류장(44-220)', lat:36.396638, lng:127.405031, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'엑스포아파트 버스정류장(44-220)', lat:36.396638, lng:127.405031, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'엑스포아파트 버스정류장(44-240)', lat:36.398072, lng:127.404832, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'엑스포아파트 버스정류장(44-240)', lat:36.398072, lng:127.404832, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'문지초등학교입구 버스정류장', lat:36.396067, lng:127.404767, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'문지초등학교입구 버스정류장', lat:36.396067, lng:127.404767, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원촌삼거리 버스정류장(44-270)', lat:36.381851, lng:127.406515, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원촌삼거리 버스정류장(44-270)', lat:36.381851, lng:127.406515, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원촌삼거리 버스정류장(44-280)', lat:36.381202, lng:127.406279, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'원촌삼거리 버스정류장(44-280)', lat:36.381202, lng:127.406279, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'전민동 태광산업 버스정류장', lat:36.403781, lng:127.404784, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'전민동 태광산업 버스정류장', lat:36.403781, lng:127.404784, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'전자디자인고교 버스정류장', lat:36.410545, lng:127.377634, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'전자디자인고교 버스정류장', lat:36.410545, lng:127.377634, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'화암네거리 버스정류장', lat:36.407123, lng:127.373723, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'화암네거리 버스정류장', lat:36.407123, lng:127.373723, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'신성동 주민센터 버스정류장', lat:36.389247, lng:127.347006, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'신성동 주민센터 버스정류장', lat:36.389247, lng:127.347006, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'하나아파트 버스정류장', lat:36.384703, lng:127.349005, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'하나아파트 버스정류장', lat:36.384703, lng:127.349005, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'무역전시관 버스정류장', lat:36.377388, lng:127.379189, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'무역전시관 버스정류장', lat:36.377388, lng:127.379189, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'국립중앙과학관 버스정류장', lat:36.377443, lng:127.378832, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'국립중앙과학관 버스정류장', lat:36.377443, lng:127.378832, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'과학기술원정문 버스정류장', lat:36.365131, lng:127.362894, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'과학기술원정문 버스정류장', lat:36.365131, lng:127.362894, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'대전전자디자인고 버스정류장', lat:36.412353, lng:127.378033, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'대전전자디자인고 버스정류장', lat:36.412353, lng:127.378033, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'북대전IC 시외버스 하차장', lat:36.412861, lng:127.378402, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'북대전IC 시외버스 하차장', lat:36.412861, lng:127.378402, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'대덕중학교 버스정류장(43-110)', lat:36.382278, lng:127.378439, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'대덕중학교 버스정류장(43-110)', lat:36.382278, lng:127.378439, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'대덕중학교 버스정류장(43-170)', lat:36.381981, lng:127.378745, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'대덕중학교 버스정류장(43-170)', lat:36.381981, lng:127.378745, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'대덕고등학교 버스정류장(43-160)', lat:36.386499, lng:127.378522, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'대덕고등학교 버스정류장(43-160)', lat:36.386499, lng:127.378522, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'천문연구원 버스정류장', lat:36.399736, lng:127.374311, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'천문연구원 버스정류장', lat:36.399736, lng:127.374311, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'KT연구센터 버스정류장', lat:36.388541, lng:127.379573, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'KT연구센터 버스정류장', lat:36.388541, lng:127.379573, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'대덕고등학교 버스정류장(43-200)', lat:36.386675, lng:127.378811, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'대덕고등학교 버스정류장(43-200)', lat:36.386675, lng:127.378811, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'엑스포과학공원 버스정류장(43-210)', lat:36.374098, lng:127.388722, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'엑스포과학공원 버스정류장(43-210)', lat:36.374098, lng:127.388722, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'엑스포과학공원 버스정류장(43-220)', lat:36.374334, lng:127.387221, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'엑스포과학공원 버스정류장(43-220)', lat:36.374334, lng:127.387221, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'시민천문대 버스정류장', lat:36.384451, lng:127.354471, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'시민천문대 버스정류장', lat:36.384451, lng:127.354471, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'대덕대 정문 버스정류장', lat:36.390008, lng:127.362306, type:'general', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+    {name:'대덕대 정문 버스정류장', lat:36.390008, lng:127.362306, type:'recycle', note:'일반+재활용 통합 버스정류장 쓰레기통'},
+  ];
+
+  async function boot(){
+    var r = await storageGetSafe('ownerAuth', true);
+    ownerPinHash = r && r.value ? JSON.parse(r.value).pinHash : null;
+
+    var p = await storageGetSafe('isAdmin', false);
+    if(p && p.value === 'true' && ownerPinHash){ adminMode = true; }
+
+    await loadBins();
+    updateModeUI();
+  }
+
+  async function addDeletedSeedKey(key){
+    var r = await storageGetSafe('deletedSeedKeys', true);
+    var list = [];
+    try{ list = r && r.value ? JSON.parse(r.value) : []; }catch(e){ list = []; }
+    if(list.indexOf(key) === -1){
+      list.push(key);
+      await storageSetSafe('deletedSeedKeys', JSON.stringify(list), true);
+    }
+  }
+
+  async function loadBins(){
+    var result = await storageGetSafe('bins', true);
+    try{
+      bins = result && result.value ? JSON.parse(result.value) : [];
+    }catch(e){ bins = []; }
+
+    if(SEED_BINS.length > 0){
+      var deletedR = await storageGetSafe('deletedSeedKeys', true);
+      var deletedKeys = {};
+      try{
+        (deletedR && deletedR.value ? JSON.parse(deletedR.value) : []).forEach(function(k){ deletedKeys[k] = true; });
+      }catch(e){}
+
+      var existingKeys = {};
+      bins.forEach(function(b){
+        existingKeys[b.lat.toFixed(6)+','+b.lng.toFixed(6)+','+b.type] = true;
+      });
+
+      var added = 0;
+      SEED_BINS.forEach(function(s){
+        var key = s.lat.toFixed(6)+','+s.lng.toFixed(6)+','+s.type;
+        if(existingKeys[key] || deletedKeys[key]) return;
+        existingKeys[key] = true;
+        added++;
+        bins.push({
+          id:'bin_seed_'+Math.random().toString(36).slice(2,9),
+          lat:s.lat, lng:s.lng, type:s.type,
+          note:s.note || '', address:s.name || '', photo:null,
+          createdAt:Date.now()
+        });
+      });
+
+      if(added > 0){
+        await storageSetSafe('bins', JSON.stringify(bins), true);
+      }
+    }
+
+    renderBinMarkers();
+  }
+  async function saveBins(){
+    return await storageSetSafe('bins', JSON.stringify(bins), true);
+  }
+
+  function updateModeUI(){
+    var btn = el('adminBtn');
+    var icon = el('adminIcon');
+    var badge = el('modeBadge');
+    var badgeText = el('modeBadgeText');
+    if(deleteMode){
+      badge.style.display = 'flex';
+      badge.style.background = 'var(--danger)';
+      badge.style.color = '#fff';
+      badge.style.cursor = 'pointer';
+      badgeText.textContent = '🗑️ 삭제 모드 · 지도의 쓰레기통을 누르면 삭제돼요 (다시 누르면 끄기)';
+    } else if(adminMode){
+      badge.style.display = 'flex';
+      badge.style.background = '';
+      badge.style.color = '';
+      badge.style.cursor = 'default';
+      badgeText.textContent = '관리자 모드 · 지도를 누르면 바로 등록돼요';
+    } else {
+      badge.style.display = 'none';
+    }
+    if(adminMode){
+      btn.classList.add('active'); icon.textContent = '🔓';
+    } else {
+      btn.classList.remove('active'); icon.textContent = '🔒';
+    }
+  }
+
+  // ---- render markers ----
+  function renderBinMarkers(){
+    binLayer.clearLayers();
+    var size = iconSizeForZoom(map.getZoom());
+    bins.forEach(function(bin){
+      var meta = TYPE_META[bin.type] || TYPE_META.general;
+      var marker = L.marker([bin.lat, bin.lng], {icon:solidIcon(bin.type, size)}).addTo(binLayer);
+      marker.binType = bin.type;
+      var photoHtml = bin.photo ? '<div class="popup-photo-label">📷 등록된 사진</div><img src="'+bin.photo+'" style="width:100%;max-width:220px;border-radius:8px;margin-bottom:8px;display:block;">' : '';
+      var addressHtml = bin.address ? '<div class="popup-note">📍 '+escapeHtml(bin.address)+'</div>' : '';
+      var noteHtml = bin.note ? '<div class="popup-note">'+escapeHtml(bin.note)+'</div>' : '';
+      var actionsHtml = adminMode ? '<div class="popup-actions"><button class="popup-del" style="color:var(--recycle);" onclick="window.__editBin(\''+bin.id+'\')">종류/정보 수정</button><button class="popup-del" onclick="window.__deleteBin(\''+bin.id+'\')">삭제하기</button></div>' : '';
+      var popupHtml =
+        '<div class="popup-title">'+meta.label+'</div>'+
+        photoHtml+
+        addressHtml+
+        noteHtml+
+        actionsHtml;
+      marker.bindPopup(popupHtml, {closeButton:false});
+      marker.on('click', function(){
+        if(deleteMode){
+          marker.closePopup();
+          window.__deleteBin(bin.id);
+        }
+      });
+    });
+  }
+
+  // ---- add bin sheet (admin only) ----
+  function openAddSheet(latlng){
+    pendingLatLng = latlng;
+    selectedType = null;
+    editingBinId = null;
+
+    el('addTitle').textContent = '쓰레기통 등록';
+    el('addSub').textContent = '선택한 위치에 쓰레기통 정보를 바로 등록합니다.';
+    el('saveBinBtn').textContent = '등록하기';
+
+    document.querySelectorAll('.type-chip').forEach(function(c){ c.classList.remove('selected'); });
+    el('binNote').value = '';
+    el('binAddress').value = '';
+    el('binFileInput').value = '';
+    binPhotoDataUrl = null;
+    el('binPreviewWrap').style.display = 'none';
+    el('binPhotoDrop').style.display = 'block';
+    el('addFieldError').style.display = 'none';
+    el('saveBinBtn').classList.add('inactive');
+
+    if(tempMarker){ map.removeLayer(tempMarker); }
+    tempMarker = L.marker(latlng, {icon:solidIcon('general'), opacity:0.85}).addTo(map);
+
+    el('addOverlay').classList.add('open');
+  }
+
+  window.__editBin = function(id){
+    var bin = bins.find(function(b){ return b.id === id; });
+    if(!bin) return;
+    map.closePopup();
+
+    pendingLatLng = null;
+    editingBinId = id;
+    selectedType = bin.type;
+
+    el('addTitle').textContent = '쓰레기통 정보 수정';
+    el('addSub').textContent = '종류나 설명, 사진을 바꿀 수 있어요. 위치는 그대로 유지돼요.';
+    el('saveBinBtn').textContent = '수정하기';
+
+    document.querySelectorAll('.type-chip').forEach(function(c){
+      c.classList.toggle('selected', c.getAttribute('data-type') === bin.type);
+    });
+    el('binNote').value = bin.note || '';
+    el('binAddress').value = bin.address || '';
+    el('binFileInput').value = '';
+    binPhotoDataUrl = bin.photo || null;
+    if(bin.photo){
+      el('binPreviewImg').src = bin.photo;
+      el('binPreviewWrap').style.display = 'block';
+      el('binPhotoDrop').style.display = 'none';
+    } else {
+      el('binPreviewWrap').style.display = 'none';
+      el('binPhotoDrop').style.display = 'block';
+    }
+    el('addFieldError').style.display = 'none';
+    el('saveBinBtn').classList.remove('inactive');
+
+    if(tempMarker){ map.removeLayer(tempMarker); tempMarker = null; }
+
+    el('addOverlay').classList.add('open');
+  };
+
+  function closeAddSheet(){
+    el('addOverlay').classList.remove('open');
+    if(tempMarker){ map.removeLayer(tempMarker); tempMarker = null; }
+    pendingLatLng = null;
+    editingBinId = null;
+  }
+
+  document.querySelectorAll('.type-chip').forEach(function(chip){
+    chip.addEventListener('click', function(){
+      document.querySelectorAll('.type-chip').forEach(function(c){ c.classList.remove('selected'); });
+      chip.classList.add('selected');
+      selectedType = chip.getAttribute('data-type');
+      el('saveBinBtn').classList.remove('inactive');
+      el('addFieldError').style.display = 'none';
+      if(tempMarker){ tempMarker.setIcon(solidIcon(selectedType)); }
+    });
+  });
+  el('cancelAddBtn').addEventListener('click', closeAddSheet);
+
+  el('binPhotoDrop').addEventListener('click', function(){ el('binFileInput').click(); });
+  el('binFileInput').addEventListener('change', async function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    try{
+      binPhotoDataUrl = await fileToCompressedDataUrl(file, 480, 0.6);
+      el('binPreviewImg').src = binPhotoDataUrl;
+      el('binPreviewWrap').style.display = 'block';
+      el('binPhotoDrop').style.display = 'none';
+    }catch(err){
+      showToast('사진을 불러오지 못했어요. 다른 사진을 시도해주세요.');
+    }
+  });
+  el('binPhotoRemove').addEventListener('click', function(){
+    binPhotoDataUrl = null;
+    el('binFileInput').value = '';
+    el('binPreviewWrap').style.display = 'none';
+    el('binPhotoDrop').style.display = 'block';
+  });
+
+  el('saveBinBtn').addEventListener('click', async function(){
+    if(!editingBinId && !pendingLatLng) return;
+    if(!selectedType){
+      el('addFieldError').style.display = 'block';
+      return;
+    }
+
+    var note = el('binNote').value.trim().slice(0,80);
+    var address = el('binAddress').value.trim().slice(0,120);
+    var photo = binPhotoDataUrl;
+    el('saveBinBtn').classList.add('inactive');
+
+    if(editingBinId){
+      var idx = bins.findIndex(function(b){ return b.id === editingBinId; });
+      if(idx === -1){ closeAddSheet(); return; }
+      var original = bins[idx];
+      var updated = Object.assign({}, original, {type:selectedType, note:note, address:address, photo:photo});
+      bins[idx] = updated;
+      var okEdit = await saveBins();
+      if(!okEdit){ bins[idx] = original; el('saveBinBtn').classList.remove('inactive'); }
+      else { renderBinMarkers(); closeAddSheet(); }
+    } else {
+      var newBin = {
+        id:'bin_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+        lat:pendingLatLng.lat, lng:pendingLatLng.lng,
+        type:selectedType, note:note, address:address, photo:photo, createdAt:Date.now()
+      };
+      bins.push(newBin);
+      var ok = await saveBins();
+      if(!ok){ bins.pop(); el('saveBinBtn').classList.remove('inactive'); }
+      else { renderBinMarkers(); closeAddSheet(); }
+    }
+  });
+
+  var confirmCallback = null;
+  function showConfirm(message, onConfirm){
+    el('confirmMessage').textContent = message;
+    confirmCallback = onConfirm;
+    el('confirmOverlay').classList.add('open');
+  }
+  el('confirmYesBtn').addEventListener('click', function(){
+    el('confirmOverlay').classList.remove('open');
+    var cb = confirmCallback; confirmCallback = null;
+    if(cb) cb();
+  });
+  el('confirmNoBtn').addEventListener('click', function(){
+    el('confirmOverlay').classList.remove('open');
+    confirmCallback = null;
+  });
+
+  window.__deleteBin = async function(id){
+    showConfirm('이 쓰레기통 정보를 삭제할까요?', async function(){
+      var idx = bins.findIndex(function(b){ return b.id === id; });
+      if(idx === -1) return;
+      var removed = bins.splice(idx,1)[0];
+      var ok = await saveBins();
+      if(ok){
+        renderBinMarkers(); map.closePopup();
+        if(removed.id && removed.id.indexOf('bin_seed_') === 0){
+          await addDeletedSeedKey(removed.lat.toFixed(6)+','+removed.lng.toFixed(6)+','+removed.type);
+        }
+      } else {
+        bins.push(removed);
+      }
+    });
+  };
+
+  // ---- legend ----
+  el('modeBadge').addEventListener('click', function(){
+    if(deleteMode){ deleteMode = false; updateModeUI(); }
+  });
+
+  el('legendBtn').addEventListener('click', function(){ el('legendOverlay').classList.add('open'); });
+  el('closeLegendBtn').addEventListener('click', function(){ el('legendOverlay').classList.remove('open'); });
+
+  // ---- admin PIN flow ----
+  el('adminBtn').addEventListener('click', function(){
+    renderAdminBody();
+    el('adminOverlay').classList.add('open');
+  });
+  function closeAdminSheet(){ el('adminOverlay').classList.remove('open'); }
+
+  function renderAdminBody(){
+    var body = el('adminBody');
+    if(adminMode){
+      var deleteBtnLabel = deleteMode ? '삭제 모드 끄기' : '삭제 모드 켜기';
+      var deleteBtnColor = deleteMode ? 'var(--ink)' : 'var(--danger)';
+      body.innerHTML =
+        '<h2>관리자 모드 사용 중</h2>'+
+        '<p class="sub">지도를 누르면 바로 쓰레기통이 등록돼요. 삭제 모드를 켜면 쓰레기통을 눌렀을 때 바로 삭제할 수 있어요.</p>'+
+        '<div class="btn-row"><button class="secondary" id="adminCloseBtn" style="flex:1;">닫기</button><button class="primary" id="deleteModeBtn" style="flex:1;background:'+deleteBtnColor+';">'+deleteBtnLabel+'</button></div>'+
+        '<div class="btn-row"><button class="primary" id="adminLogoutBtn" style="flex:1;background:var(--danger);">관리자 모드 끄기</button></div>';
+      el('adminCloseBtn').addEventListener('click', closeAdminSheet);
+      el('deleteModeBtn').addEventListener('click', function(){
+        deleteMode = !deleteMode;
+        updateModeUI();
+        closeAdminSheet();
+      });
+      el('adminLogoutBtn').addEventListener('click', async function(){
+        adminMode = false;
+        deleteMode = false;
+        await storageSetSafe('isAdmin', 'false', false);
+        updateModeUI(); renderBinMarkers();
+        closeAdminSheet();
+      });
+    } else if(!ownerPinHash){
+      body.innerHTML =
+        '<h2>관리자 비밀번호 만들기</h2>'+
+        '<p class="sub">이 지도의 관리자로 등록해요. 비밀번호를 아는 사람만 쓰레기통을 직접 등록할 수 있어요.</p>'+
+        '<label class="field-label">비밀번호 (4자 이상)</label>'+
+        '<input type="password" id="pinInput1" placeholder="비밀번호 입력">'+
+        '<label class="field-label">비밀번호 확인</label>'+
+        '<input type="password" id="pinInput2" placeholder="다시 입력">'+
+        '<p class="field-error" id="pinError">비밀번호가 일치하지 않거나 너무 짧아요.</p>'+
+        '<div class="btn-row"><button class="secondary" id="adminCancelBtn" style="flex:1;">취소</button><button class="primary" id="pinSetBtn" style="flex:1;">설정하기</button></div>';
+      el('adminCancelBtn').addEventListener('click', closeAdminSheet);
+      el('pinSetBtn').addEventListener('click', async function(){
+        var p1 = el('pinInput1').value, p2 = el('pinInput2').value;
+        if(p1.length < 4 || p1 !== p2){ el('pinError').style.display = 'block'; return; }
+        el('pinSetBtn').disabled = true;
+        var hash = await sha256Hex(p1);
+        var ok1 = await storageSetSafe('ownerAuth', JSON.stringify({pinHash:hash}), true);
+        var ok2 = ok1 && await storageSetSafe('isAdmin', 'true', false);
+        el('pinSetBtn').disabled = false;
+        if(ok1 && ok2){
+          ownerPinHash = hash; adminMode = true;
+          updateModeUI(); renderBinMarkers();
+          closeAdminSheet();
+        }
+        // on failure, storageSetSafe already showed a toast explaining why
+      });
+    } else {
+      body.innerHTML =
+        '<h2>관리자 비밀번호 입력</h2>'+
+        '<p class="sub">등록 권한을 가진 관리자만 입력할 수 있어요.</p>'+
+        '<input type="password" id="pinInput" placeholder="비밀번호 입력">'+
+        '<p class="field-error" id="pinError">비밀번호가 올바르지 않아요.</p>'+
+        '<div class="btn-row"><button class="secondary" id="adminCancelBtn" style="flex:1;">취소</button><button class="primary" id="pinCheckBtn" style="flex:1;">확인</button></div>';
+      el('adminCancelBtn').addEventListener('click', closeAdminSheet);
+      el('pinCheckBtn').addEventListener('click', async function(){
+        var p = el('pinInput').value;
+        var hash = await sha256Hex(p);
+        if(hash === ownerPinHash){
+          adminMode = true;
+          await storageSetSafe('isAdmin', 'true', false);
+          updateModeUI(); renderBinMarkers();
+          closeAdminSheet();
+        } else {
+          el('pinError').style.display = 'block';
+        }
+      });
+    }
+  }
+
+  // ---- Photo / AI recycling helper ----
+  var selectedFile = null;
+  var selectedBase64 = null;
+
+  el('openPhotoBtn').addEventListener('click', function(){
+    resetPhotoSheet();
+    el('photoOverlay').classList.add('open');
+  });
+  el('closePhotoBtn').addEventListener('click', function(){ el('photoOverlay').classList.remove('open'); });
+
+  function resetPhotoSheet(){
+    selectedFile = null; selectedBase64 = null;
+    el('previewImg').style.display = 'none';
+    el('photoDrop').style.display = 'block';
+    el('itemNameInput').value = '';
+    el('analysisArea').innerHTML = '';
+    el('fileInput').value = '';
+    updateAnalyzeAvailability();
+  }
+  function updateAnalyzeAvailability(){
+    var hasPhoto = !!selectedBase64;
+    var hasName = el('itemNameInput').value.trim().length > 0;
+    el('retakeBtn').style.display = hasPhoto ? 'inline-block' : 'none';
+    el('analyzeBtn').disabled = !(hasPhoto || hasName);
+  }
+  el('photoDrop').addEventListener('click', function(){ el('fileInput').click(); });
+  el('retakeBtn').addEventListener('click', function(){
+    selectedFile = null; selectedBase64 = null;
+    el('previewImg').style.display = 'none';
+    el('photoDrop').style.display = 'block';
+    el('fileInput').value = '';
+    updateAnalyzeAvailability();
+  });
+  el('itemNameInput').addEventListener('input', updateAnalyzeAvailability);
+
+  el('fileInput').addEventListener('change', function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    selectedFile = file;
+    var reader = new FileReader();
+    reader.onload = function(evt){
+      var dataUrl = evt.target.result;
+      selectedBase64 = dataUrl.split(',')[1];
+      el('previewImg').src = dataUrl;
+      el('previewImg').style.display = 'block';
+      el('photoDrop').style.display = 'none';
+      el('analysisArea').innerHTML = '';
+      updateAnalyzeAvailability();
+    };
+    reader.readAsDataURL(file);
+  });
+
+  el('analyzeBtn').addEventListener('click', async function(){
+    var itemName = el('itemNameInput').value.trim();
+    if(!selectedBase64 && !itemName) return;
+    var area = el('analysisArea');
+    area.innerHTML = '<div class="loading-row"><div class="spinner"></div>분리배출 방법을 확인하고 있어요...</div>';
+    el('analyzeBtn').disabled = true;
+
+    try{
+      var systemPrompt = "당신은 한국의 분리배출 규정에 정통한 도우미입니다. 사용자가 올린 사진이나 알려준 물건 이름을 보고 " +
+        "어떻게 분리배출해야 하는지 안내합니다. 반드시 순수 JSON 객체 하나만 응답하세요. 코드블록이나 설명 문구를 " +
+        "절대 포함하지 마세요. JSON 형식: " +
+        '{"item":"물건 이름(한국어, 간결하게)","category":"general 또는 recycle 중 하나 (지도에 있는 쓰레기통 종류 기준)",' +
+        '"category_label":"실제 배출 방법을 한국어로 구체적으로 표시 (예: 재활용-플라스틱, 재활용-종이, 일반쓰레기, 음식물쓰레기는 별도 배출, 담배꽁초는 전용 수거함 등 실제 분리배출 기준을 반영)",' +
+        '"steps":["배출 전 처리 방법을 순서대로 나열한 문장들"],' +
+        '"tip":"헷갈리기 쉬운 부분이나 주의사항 한두 문장"}' +
+        " steps는 2~4개의 구체적이고 실행 가능한 문장으로 작성하세요. 사진이 없고 물건 이름만 주어진 경우, 이름만으로 합리적으로 추정해서 안내하세요.";
+
+      var parts = [];
+      var textMsg;
+      if(selectedBase64){
+        var mediaType = selectedFile.type || 'image/jpeg';
+        parts.push({ inline_data:{ mime_type: mediaType, data: selectedBase64 } });
+        textMsg = itemName
+          ? "사진 속 물건 이름은 '"+itemName+"'입니다. 이 물건은 어떻게 분리배출해야 하나요?"
+          : "이 사진 속 물건은 어떻게 분리배출해야 하나요?";
+      } else {
+        textMsg = "'"+itemName+"'은(는) 어떻게 분리배출해야 하나요?";
+      }
+      parts.push({ text: textMsg });
+
+      var response = await fetch("/api/analyze", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({
+          system: systemPrompt,
+          parts: parts
+        })
+      });
+      if(!response.ok) throw new Error("API 요청 실패 (" + response.status + ")");
+
+      var data = await response.json();
+      var candidate = data.candidates && data.candidates[0];
+      var textOut = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0] && candidate.content.parts[0].text;
+      if(!textOut) throw new Error("응답을 읽을 수 없어요.");
+
+      var raw = textOut.trim().replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
+      var parsed = JSON.parse(raw);
+      renderResult(parsed);
+    }catch(err){
+      area.innerHTML = '<div class="error-text">분석에 실패했어요. 다시 시도해주세요.</div>';
+    }finally{
+      updateAnalyzeAvailability();
+    }
+  });
+
+  function renderResult(parsed){
+    var meta = TYPE_META[parsed.category] || TYPE_META.general;
+    var stepsHtml = (parsed.steps || []).map(function(s){ return '<li>'+escapeHtml(s)+'</li>'; }).join('');
+    var tipHtml = parsed.tip ? '<div class="result-tip">💡 '+escapeHtml(parsed.tip)+'</div>' : '';
+    el('analysisArea').innerHTML =
+      '<div class="result-card">' +
+        '<span class="result-badge ' + parsed.category + '">' + escapeHtml(parsed.category_label || meta.label) + '</span>' +
+        '<p class="result-item">' + escapeHtml(parsed.item || '') + '</p>' +
+        '<ol class="result-steps">' + stepsHtml + '</ol>' +
+        tipHtml +
+      '</div>';
+  }
+
+  function setAppHeight(){
+    document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
+    if(typeof map !== 'undefined' && map){ map.invalidateSize(); }
+  }
+  window.addEventListener('resize', setAppHeight);
+  window.addEventListener('orientationchange', setAppHeight);
+  setAppHeight();
+
+  initMap();
+})();
+</script>
+</body>
+</html>
